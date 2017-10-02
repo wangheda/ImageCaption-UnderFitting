@@ -83,7 +83,7 @@ class Im2TxtModel(object):
     Args:
       mode: "train", "eval" or "inference".
     """
-    assert mode in ["train", "eval", "inference"]
+    assert mode in ["train", "inference"]
     self.mode = mode
 
     # Reader for the input data.
@@ -219,9 +219,14 @@ class Im2TxtModel(object):
     Outputs:
       self.image_embeddings
     """
+    if self.mode == "inference":
+      trainable = False
+    else:
+      trainable = FLAGS.train_inception
+
     inception_output = image_embedding.inception_v3(
         self.images,
-        trainable=FLAGS.train_inception,
+        trainable=trainable,
         is_training=self.is_training())
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")

@@ -31,8 +31,8 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
   def __init__(self):
     super(InferenceWrapper, self).__init__()
 
-  def build_model(self, model_config):
-    model = im2txt_model.Im2TxtModel(model_config, mode="inference")
+  def build_model(self):
+    model = im2txt_model.Im2TxtModel(mode="inference")
     model.build()
     return model
 

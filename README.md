@@ -47,9 +47,15 @@ Write an `eval.sh` similar to `train.sh`.
 
 # Inference
 
-Pls rewrite inference.py and put any upportive scripts needed in `inference_utils`, do not change `im2txt_model.py` unless necessary.
+You will need GNU parallel. You can install GNU paralle by running `sudo apt-get install parallel`.
 
-Write an `inference.sh` similar to `train.sh`.
+Set the model name and checkpoint number in `inference.sh` and run:
+
+    bash inference.sh
+
+It will show the path to which it output the json.
+
+You may want to change `num_processes` and `gpu_fraction` to fit your GPU memory. You may see CUDA error if the number of processes is too large.
 
 # Important notice
 

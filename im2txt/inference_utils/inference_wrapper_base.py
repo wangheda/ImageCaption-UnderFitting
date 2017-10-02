@@ -33,7 +33,7 @@ Subclasses must implement the following methods:
     serialized numpy array containing activations from a particular model layer.
 
 Client usage:
-  1. Build the model inference graph via build_graph_from_config() or
+  1. Build the model inference graph via build_graph() or
      build_graph_from_proto().
   2. Call the resulting restore_fn to load the model checkpoint.
   3. For each image in a batch of images:
@@ -59,11 +59,10 @@ class InferenceWrapperBase(object):
   def __init__(self):
     pass
 
-  def build_model(self, model_config):
+  def build_model(self):
     """Builds the model for inference.
 
     Args:
-      model_config: Object containing configuration for building the model.
 
     Returns:
       model: The model object.
@@ -99,11 +98,10 @@ class InferenceWrapperBase(object):
 
     return _restore_fn
 
-  def build_graph_from_config(self, model_config, checkpoint_path):
-    """Builds the inference graph from a configuration object.
+  def build_graph(self, checkpoint_path):
+    """Builds the inference graph
 
     Args:
-      model_config: Object containing configuration for building the model.
       checkpoint_path: Checkpoint file or a directory containing a checkpoint
         file.
 
@@ -112,7 +110,7 @@ class InferenceWrapperBase(object):
         from the checkpoint file.
     """
     tf.logging.info("Building model.")
-    self.build_model(model_config)
+    self.build_model()
     saver = tf.train.Saver()
 
     return self._create_restore_fn(checkpoint_path, saver)

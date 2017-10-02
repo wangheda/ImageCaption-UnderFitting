@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+# edit by Miao
 # ==============================================================================
 r"""Generate captions for images using default beam search parameters."""
 
@@ -18,13 +19,14 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-import math
 import os
-
+import math
+import json
+import time
+import random
 
 import tensorflow as tf
 
-import configuration
 import inference_wrapper
 from inference_utils import caption_generator
 from inference_utils import vocabulary
@@ -35,32 +37,34 @@ tf.flags.DEFINE_string("checkpoint_path", "",
                        "Model checkpoint file or directory containing a "
                        "model checkpoint file.")
 tf.flags.DEFINE_string("vocab_file", "", "Text file containing the vocabulary.")
-tf.flags.DEFINE_string("input_files", "",
-                       "File pattern or comma-separated list of file patterns "
-                       "of image files.")
+tf.flags.DEFINE_string("input_file_pattern", "", "The pattern of images.")
+tf.flags.DEFINE_string("output", "", "The output file.")
+tf.flags.DEFINE_float("gpu_memory_fraction", 1.0, "Fraction of gpu memory used in inference.")
+
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
 
 def main(_):
+  assert FLAGS.checkpoint_path, "--checkpoint_path is required"
+  assert FLAGS.vocab_file, "--vocab_file is required"
+  assert FLAGS.input_file_pattern , "--input_file_pattern is required"
+  assert FLAGS.output, "--output is required"
+
   # Build the inference graph.
   g = tf.Graph()
   with g.as_default():
     model = inference_wrapper.InferenceWrapper()
-    restore_fn = model.build_graph_from_config(configuration.ModelConfig(),
-                                               FLAGS.checkpoint_path)
+    restore_fn = model.build_graph(FLAGS.checkpoint_path)
   g.finalize()
 
   # Create the vocabulary.
   vocab = vocabulary.Vocabulary(FLAGS.vocab_file)
 
-  filenames = []
-  for file_pattern in FLAGS.input_files.split(","):
-    filenames.extend(tf.gfile.Glob(file_pattern))
-  tf.logging.info("Running caption generation on %d files matching %s",
-                  len(filenames), FLAGS.input_files)
+  results = []
 
-  with tf.Session(graph=g) as sess:
+  gpu_options = tf.GPUOptions(per_process_gpu_memory_fraction=FLAGS.gpu_memory_fraction)
+  with tf.Session(graph=g, config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
     # Load the model from checkpoint.
     restore_fn(sess)
 
@@ -68,18 +72,28 @@ def main(_):
     # beam search parameters. See caption_generator.py for a description of the
     # available beam search parameters.
     generator = caption_generator.CaptionGenerator(model, vocab)
-
-    for filename in filenames:
+    t_start = time.time()
+    files = tf.gfile.Glob(FLAGS.input_file_pattern)
+    for i, filename in enumerate(files):
+      if i % 100 == 0:
+          print(i)
       with tf.gfile.GFile(filename, "r") as f:
         image = f.read()
       captions = generator.beam_search(sess, image)
-      print("Captions for image %s:" % os.path.basename(filename))
-      for i, caption in enumerate(captions):
-        # Ignore begin and end words.
-        sentence = [vocab.id_to_word(w) for w in caption.sentence[1:-1]]
-        sentence = " ".join(sentence)
-        print("  %d) %s (p=%f)" % (i, sentence, math.exp(caption.logprob)))
-
+      image_id = filename.split('.')[0]
+      if "/" in image_id:
+        image_id = image_id.split("/")[-1]
+      result = {}
+      result['image_id'] = image_id
+      sent = [vocab.id_to_word(w) for w in captions[0].sentence[1:-1]]
+      result['caption'] = "".join(sent)
+      results.append(result)
+  
+  t_end = time.time()
+  print("time: %f" %(t_end - t_start))
+  output = open(FLAGS.output, 'w')
+  json.dump(results, output, ensure_ascii=False, indent=4)
+  output.close()
 
 if __name__ == "__main__":
   tf.app.run()
