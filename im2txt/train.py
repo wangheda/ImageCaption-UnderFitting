@@ -41,7 +41,7 @@ tf.flags.DEFINE_integer("log_every_n_steps", 1,
 # training config
 tf.flags.DEFINE_integer("batch_size", 30,
                         "Batch size.")
-tf.flags.DEFINE_integer("num_examples_per_epoch", 586363,
+tf.flags.DEFINE_integer("num_examples_per_epoch", 210000,
                         "Number of examples per epoch of training data.")
 tf.flags.DEFINE_string("optimizer", "SGD",
                         "Optimizer for training the model.")
