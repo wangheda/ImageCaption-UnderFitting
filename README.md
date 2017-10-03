@@ -39,12 +39,6 @@ Then, you can run `bash train.sh` for baseline.
 
 You can also create another training script with a different configuration.
 
-# Validate
-
-Pls rewrite eval.py and put any supportive scripts needed in `eval_utils`, do not change `im2txt_model.py` unless necessary.
-
-Write an `eval.sh` similar to `train.sh`.
-
 # Inference
 
 You will need GNU parallel. You can install GNU paralle by running `sudo apt-get install parallel`.
@@ -56,6 +50,18 @@ Set the model name and checkpoint number in `inference.sh` and run:
 It will show the path to which it output the json.
 
 You may want to change `num_processes` and `gpu_fraction` to fit your GPU memory. You may see CUDA error if the number of processes is too large.
+
+# Validate
+
+Before validating your json result, you need to generate reference json file. Run
+
+    bash scripts/build_reference_file.sh
+
+Then, set the model name and checkpoint number in `eval.sh` and run:
+
+    bash eval.sh
+
+It will show and save the metrics.
 
 # Important notice
 
