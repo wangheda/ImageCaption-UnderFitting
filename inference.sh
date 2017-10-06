@@ -1,7 +1,7 @@
 #!/bin/bash
 
 model_name="show_and_tell_model"
-ckpt=240702
+ckpt=529346
 num_processes=3
 gpu_fraction=0.28
 device=1

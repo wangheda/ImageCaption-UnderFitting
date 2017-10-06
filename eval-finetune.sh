@@ -2,13 +2,12 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_model"
+model_name="show_and_tell_model_finetune"
 num_processes=3
 gpu_fraction=0.28
 device=1
-ckpt=101463
 
-for ckpt in 65271 129123 193009 257007 322481 387562 464911 529346 594645 658160 723932 788380; do 
+for ckpt in 540807 553187 565648 578097 590518 602943 615359 627785 639372; do 
   # the script directory
   MODEL_DIR="${DIR}/model/${model_name}"
   VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
