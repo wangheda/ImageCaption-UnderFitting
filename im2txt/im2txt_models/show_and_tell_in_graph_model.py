@@ -2,11 +2,6 @@
 import tensorflow as tf
 from tensorflow.python.layers.core import Dense
 
-tf.flags.DEFINE_integer("lstm_dropout_keep_prob", 0.7,
-                        "If < 1.0, the dropout keep probability applied to LSTM variables..")
-tf.flags.DEFINE_integer("num_lstm_units", 512,
-                        "Lstm output dimension")
-
 FLAGS = tf.app.flags.FLAGS
 
 
