@@ -70,9 +70,8 @@ class ShowAndTellInGraphModel(object):
       zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
       _, initial_state = lstm_cell(image_embeddings, zero_state)
 
-      output_layer = tf.layers.Dense(units=FLAGS.vocab_size,
-                                     name="output_layer",
-                                     reuse=True)
+      output_layer = Dense(units=FLAGS.vocab_size,
+                                     name="output_layer")
       # Allow the LSTM variables to be reused.
       # lstm_scope.reuse_variables()
 
