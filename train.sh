@@ -13,4 +13,4 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
-  --number_of_steps=1000000
+  --number_of_steps=420000

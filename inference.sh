@@ -30,6 +30,6 @@ done | parallel -j $num_processes
 
 cd ${DIR}
 
-python tools/merge_json_list.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/all.json
+python tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/all.json
 
 echo output saved to ${OUTPUT_DIR}/all.json
