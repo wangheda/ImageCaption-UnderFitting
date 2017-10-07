@@ -10,7 +10,7 @@ tf.flags.DEFINE_integer("num_lstm_units", 512,
 FLAGS = tf.app.flags.FLAGS
 
 
-class ShowAndTellModel(object):
+class ShowAndTellInGraphModel(object):
   """Image-to-text implementation based on http://arxiv.org/abs/1411.4555.
 
   "Show and Tell: A Neural Image Caption Generator"
