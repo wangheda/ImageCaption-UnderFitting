@@ -4,6 +4,19 @@ from tensorflow.python.layers.core import Dense
 
 FLAGS = tf.app.flags.FLAGS
 
+start_token = 1
+end_token = 2
+beam_width = 3
+max_caption_length = 20
+
+def get_shape(tensor):
+  """Returns static shape if available and dynamic shape otherwise."""
+  static_shape = tensor.shape.as_list()
+  dynamic_shape = tf.unstack(tf.shape(tensor))
+  dims = [s[1] if s[0] is None else s[0]
+          for s in zip(static_shape, dynamic_shape)]
+  return dims
+
 
 class ShowAndTellInGraphModel(object):
   """Image-to-text implementation based on http://arxiv.org/abs/1411.4555.
@@ -65,52 +78,53 @@ class ShowAndTellInGraphModel(object):
 
     with tf.variable_scope("lstm", initializer=initializer) as lstm_scope:
       # Feed the image embeddings to set the initial LSTM state.
-      batch_size = image_embeddings.get_shape()[0]
+      batch_size = get_shape(image_embeddings)[0]
 
       zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
       _, initial_state = lstm_cell(image_embeddings, zero_state)
 
       output_layer = Dense(units=FLAGS.vocab_size,
-                                     name="output_layer")
+                           name="output_layer")
       # Allow the LSTM variables to be reused.
       # lstm_scope.reuse_variables()
 
-      if mode == "inference":
-        # In inference mode, use concatenated states for convenient feeding and
-        # fetching.
-        tf.concat(axis=1, values=initial_state, name="initial_state")
-
-        # Placeholder for feeding a batch of concatenated states.
-        state_feed = tf.placeholder(dtype=tf.float32,
-                                    shape=[None, sum(lstm_cell.state_size)],
-                                    name="state_feed")
-        state_tuple = tf.split(value=state_feed, num_or_size_splits=2, axis=1)
-
-        sequence_length = tf.ones([state_feed.get_shape()[0]], tf.int32)
-      else:
+      if mode == "train":
         sequence_length = tf.reduce_sum(input_mask, 1)
+        helper = tf.contrib.seq2seq.TrainingHelper(
+          inputs=seq_embeddings,
+          sequence_length=sequence_length)
+        decoder = tf.contrib.seq2seq.BasicDecoder(
+          cell=lstm_cell,
+          helper=helper,
+          initial_state=initial_state,
+          output_layer=output_layer)
 
-      helper = tf.contrib.seq2seq.TrainingHelper(inputs=seq_embeddings,
-                                                 sequence_length=sequence_length)
 
-      decoder = tf.contrib.seq2seq.BasicDecoder(cell=lstm_cell,
-                                                helper=helper,
-                                                initial_state=initial_state,
-                                                output_layer=output_layer)
-      if mode == "inference":
-        # Run a single LSTM step.
-        outputs, state_tuple, _, _ = decoder.step(time=1,
-                                                  inputs=tf.squeeze(seq_embeddings, axis=[1]),
-                                                  state=state_tuple)
+      elif mode == "inference":
+        decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+          cell=lstm_cell,
+          embedding=embedding_map,
+          start_tokens=tf.fill([batch_size], start_token),    #[batch_size]
+          end_token=end_token,
+          initial_state=tf.contrib.seq2seq.tile_batch(initial_state, multiplier=beam_width), #[batch_size*beam_width]
+          beam_width=beam_width,
+          output_layer=output_layer,
+          length_penalty_weight=0.0)
 
-        # Concatentate the resulting state.
-        tf.concat(axis=1, values=state_tuple, name="state")
+
       else:
-        # Run the batch of sequence embeddings through the LSTM.
-        outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(decoder=decoder,
-                                                           scope=lstm_scope)
-      
-      logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
-    return logits
+        raise Exception("Unknown mode!")
 
+      maximum_iterations = None if mode == "train" else max_caption_length
+      outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(
+        decoder=decoder,
+        output_time_major=False,
+        impute_finished=False,
+        maximum_iterations=maximum_iterations)
+
+    if mode == "train":
+      logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
+      return {"logits": logits}
+    else:
+      return {"bs_results": outputs}
 
