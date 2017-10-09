@@ -85,7 +85,7 @@ def main(_):
         image_id = image_id.split("/")[-1]
       result = {}
       result['image_id'] = image_id
-      sent = [vocab.id_to_word(w) for w in captions[0].sentence[1:-1]]
+      sent = [vocab.id_to_word(w) for w in captions[0]]
       result['caption'] = "".join(sent)
       results.append(result)
   

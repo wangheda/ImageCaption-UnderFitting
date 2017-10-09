@@ -34,6 +34,9 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
   def build_model(self):
     model = im2txt_model.Im2TxtModel(mode="inference")
     model.build()
+    self.model = model
+    self.predicted_ids = model.predicted_ids
+    self.scores = model.scores
     return model
 
   def feed_image(self, sess, encoded_image):
@@ -49,3 +52,6 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
             "lstm/state_feed:0": state_feed,
         })
     return softmax_output, state_output, None
+
+  def support_ingraph(self):
+    return self.model.support_ingraph
