@@ -101,10 +101,10 @@ def main(_):
       predicted_ids = np.transpose(predicted_ids, (0,2,1))   
       scores = np.transpose(scores, (0,2,1))
       for caption in predicted_ids[0]:
-        #print(caption)
-	caption = [id for id in caption if id >= 0]
-        sent = [vocab.id_to_word(w) for w in caption[0:-1]]
-        #print(" ".join(sent))
+        print(caption)
+        caption = [id for id in caption if id >= 0 and id != FLAGS.end_token]
+        sent = [vocab.id_to_word(w) for w in caption]
+        print(" ".join(sent))
       """
       captions = generator.beam_search(sess, image)
       image_id = filename.split('.')[0]
