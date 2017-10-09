@@ -35,8 +35,10 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
     model = im2txt_model.Im2TxtModel(mode="inference")
     model.build()
     self.model = model
-    self.predicted_ids = model.predicted_ids
-    self.scores = model.scores
+    if hasattr(model, "predicted_ids"):
+      self.predicted_ids = model.predicted_ids
+    if hasattr(model, "scores"):
+      self.scores = model.scores
     return model
 
   def feed_image(self, sess, encoded_image):
