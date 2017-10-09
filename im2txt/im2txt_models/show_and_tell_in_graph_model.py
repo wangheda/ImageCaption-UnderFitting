@@ -123,7 +123,8 @@ class ShowAndTellInGraphModel(object):
         maximum_iterations=maximum_iterations)
 
     if mode == "train":
-      return tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
+      logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
+      return {"logits": logits}
     else:
-      return {"bs_results":outputs}
+      return {"bs_results": outputs}
 
