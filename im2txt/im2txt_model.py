@@ -263,7 +263,7 @@ class Im2TxtModel(object):
     if self.mode == "inference":
       if "logits" in outputs:
         tf.nn.softmax(outputs["logits"], name="softmax")
-      elif "bs_results" in logits:
+      elif "bs_results" in outputs:
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
     else:
