@@ -108,6 +108,6 @@ class ShowAndTellModel(object):
           weights_initializer=initializer,
           scope=logits_scope)
 
-    return logits
+    return {"logits":logits}
 
 
