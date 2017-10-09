@@ -4,10 +4,12 @@ from tensorflow.python.layers.core import Dense
 
 FLAGS = tf.app.flags.FLAGS
 
+"""
 start_token = 1
 end_token = 2
 beam_width = 3
 max_caption_length = 20
+"""
 
 def get_shape(tensor):
   """Returns static shape if available and dynamic shape otherwise."""
@@ -104,10 +106,10 @@ class ShowAndTellInGraphModel(object):
         decoder = tf.contrib.seq2seq.BeamSearchDecoder(
           cell=lstm_cell,
           embedding=embedding_map,
-          start_tokens=tf.fill([batch_size], start_token),    #[batch_size]
-          end_token=end_token,
-          initial_state=tf.contrib.seq2seq.tile_batch(initial_state, multiplier=beam_width), #[batch_size*beam_width]
-          beam_width=beam_width,
+          start_tokens=tf.fill([batch_size], FLAGS.start_token),    #[batch_size]
+          end_token=FLAGS.end_token,
+          initial_state=tf.contrib.seq2seq.tile_batch(initial_state, multiplier=FLAGS.beam_width), #[batch_size*beam_width]
+          beam_width=FLAGS.beam_width,
           output_layer=output_layer,
           length_penalty_weight=0.0)
 
@@ -115,7 +117,7 @@ class ShowAndTellInGraphModel(object):
       else:
         raise Exception("Unknown mode!")
 
-      maximum_iterations = None if mode == "train" else max_caption_length
+      maximum_iterations = None if mode == "train" else FLAGS.max_caption_length
       outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(
         decoder=decoder,
         output_time_major=False,
