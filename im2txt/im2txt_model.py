@@ -64,6 +64,9 @@ tf.flags.DEFINE_integer("image_width", 299,
                         "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_float("initializer_scale", 0.08,
                         "Scale used to initialize model variables.")
+tf.flags.DEFINE_boolean("support_ingraph", False,
+                        "Whether the model supports in-graph inference. If the model supports it, "
+                        "the output of the model should contains key 'bs_result'")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -127,6 +130,9 @@ class Im2TxtModel(object):
 
     # Global step Tensor.
     self.global_step = None
+
+    # In-graph inference support
+    self.support_ingraph = FLAGS.support_ingraph
 
   def is_training(self):
     """Returns true if the model is built for training mode."""

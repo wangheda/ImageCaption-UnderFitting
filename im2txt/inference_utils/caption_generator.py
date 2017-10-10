@@ -21,6 +21,8 @@ from __future__ import print_function
 import heapq
 import math
 
+import tensorflow as tf
+FLAGS = tf.flags.FLAGS
 
 import numpy as np
 
@@ -148,64 +150,86 @@ class CaptionGenerator(object):
     Returns:
       A list of Caption sorted by descending score.
     """
-    # Feed in the image to get the initial state.
-    initial_state = self.model.feed_image(sess, encoded_image)
+    if self.model.support_ingraph():
+      predicted_ids, scores = sess.run(
+        [self.model.predicted_ids, self.model.scores], 
+        feed_dict={"image_feed:0": encoded_image})
+      predicted_ids = np.transpose(predicted_ids, (0,2,1))   
+      scores = np.transpose(scores, (0,2,1))
 
-    initial_beam = Caption(
-        sentence=[self.vocab.start_id],
-        state=initial_state[0],
-        logprob=0.0,
-        score=0.0,
-        metadata=[""])
-    partial_captions = TopN(self.beam_size)
-    partial_captions.push(initial_beam)
-    complete_captions = TopN(self.beam_size)
-
-    # Run beam search.
-    for _ in range(self.max_caption_length - 1):
-      partial_captions_list = partial_captions.extract()
-      partial_captions.reset()
-      input_feed = np.array([c.sentence[-1] for c in partial_captions_list])
-      state_feed = np.array([c.state for c in partial_captions_list])
-
-      softmax, new_states, metadata = self.model.inference_step(sess,
-                                                                input_feed,
-                                                                state_feed)
-
-      for i, partial_caption in enumerate(partial_captions_list):
-        word_probabilities = softmax[i]
-        state = new_states[i]
-        # For this partial caption, get the beam_size most probable next words.
-        words_and_probs = list(enumerate(word_probabilities))
-        words_and_probs.sort(key=lambda x: -x[1])
-        words_and_probs = words_and_probs[0:self.beam_size]
-        # Each next word gives a new partial caption.
-        for w, p in words_and_probs:
-          if p < 1e-12:
-            continue  # Avoid log(0).
-          sentence = partial_caption.sentence + [w]
-          logprob = partial_caption.logprob + math.log(p)
-          score = logprob
-          if metadata:
-            metadata_list = partial_caption.metadata + [metadata[i]]
+      final_captions = []
+      for caption in predicted_ids[0]:
+        partial_caption = []
+        for word_id in caption:
+          if word_id != FLAGS.end_token:
+            if word_id >= 0 and word_id != FLAGS.start_token:
+              partial_caption.append(word_id)
           else:
-            metadata_list = None
-          if w == self.vocab.end_id:
-            if self.length_normalization_factor > 0:
-              score /= len(sentence)**self.length_normalization_factor
-            beam = Caption(sentence, state, logprob, score, metadata_list)
-            complete_captions.push(beam)
-          else:
-            beam = Caption(sentence, state, logprob, score, metadata_list)
-            partial_captions.push(beam)
-      if partial_captions.size() == 0:
-        # We have run out of partial candidates; happens when beam_size = 1.
-        break
+            break
+        final_captions.append(partial_caption)
 
-    # If we have no complete captions then fall back to the partial captions.
-    # But never output a mixture of complete and partial captions because a
-    # partial caption could have a higher score than all the complete captions.
-    if not complete_captions.size():
-      complete_captions = partial_captions
+    else:
+      # The original out-graph inference
+      # Feed in the image to get the initial state.
+      initial_state = self.model.feed_image(sess, encoded_image)
 
-    return complete_captions.extract(sort=True)
+      initial_beam = Caption(
+          sentence=[self.vocab.start_id],
+          state=initial_state[0],
+          logprob=0.0,
+          score=0.0,
+          metadata=[""])
+      partial_captions = TopN(self.beam_size)
+      partial_captions.push(initial_beam)
+      complete_captions = TopN(self.beam_size)
+
+      # Run beam search.
+      for _ in range(self.max_caption_length - 1):
+        partial_captions_list = partial_captions.extract()
+        partial_captions.reset()
+        input_feed = np.array([c.sentence[-1] for c in partial_captions_list])
+        state_feed = np.array([c.state for c in partial_captions_list])
+
+        softmax, new_states, metadata = self.model.inference_step(sess,
+                                                                  input_feed,
+                                                                  state_feed)
+
+        for i, partial_caption in enumerate(partial_captions_list):
+          word_probabilities = softmax[i]
+          state = new_states[i]
+          # For this partial caption, get the beam_size most probable next words.
+          words_and_probs = list(enumerate(word_probabilities))
+          words_and_probs.sort(key=lambda x: -x[1])
+          words_and_probs = words_and_probs[0:self.beam_size]
+          # Each next word gives a new partial caption.
+          for w, p in words_and_probs:
+            if p < 1e-12:
+              continue  # Avoid log(0).
+            sentence = partial_caption.sentence + [w]
+            logprob = partial_caption.logprob + math.log(p)
+            score = logprob
+            if metadata:
+              metadata_list = partial_caption.metadata + [metadata[i]]
+            else:
+              metadata_list = None
+            if w == self.vocab.end_id:
+              if self.length_normalization_factor > 0:
+                score /= len(sentence)**self.length_normalization_factor
+              beam = Caption(sentence, state, logprob, score, metadata_list)
+              complete_captions.push(beam)
+            else:
+              beam = Caption(sentence, state, logprob, score, metadata_list)
+              partial_captions.push(beam)
+        if partial_captions.size() == 0:
+          # We have run out of partial candidates; happens when beam_size = 1.
+          break
+
+      # If we have no complete captions then fall back to the partial captions.
+      # But never output a mixture of complete and partial captions because a
+      # partial caption could have a higher score than all the complete captions.
+      if not complete_captions.size():
+        complete_captions = partial_captions
+
+      final_captions = [item.sentence[1:-1] for item in complete_captions.extract(sort=True)]
+
+    return final_captions
