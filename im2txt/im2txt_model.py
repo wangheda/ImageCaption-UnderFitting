@@ -14,7 +14,6 @@
 # ==============================================================================
 
 """Image-to-text implementation based on http://arxiv.org/abs/1411.4555.
-
 "Show and Tell: A Neural Image Caption Generator"
 Oriol Vinyals, Alexander Toshev, Samy Bengio, Dumitru Erhan
 """
@@ -67,6 +66,8 @@ tf.flags.DEFINE_float("initializer_scale", 0.08,
 tf.flags.DEFINE_boolean("support_ingraph", False,
                         "Whether the model supports in-graph inference. If the model supports it, "
                         "the output of the model should contains key 'bs_result'")
+tf.flags.DEFINE_boolean("use_box", False,
+                        "Whether to remain position information in inception v3 output feature matrix")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -82,7 +83,6 @@ class Im2TxtModel(object):
 
   def __init__(self, mode):
     """Basic setup.
-
     Args:
       mode: "train", "eval" or "inference".
     """
@@ -140,12 +140,10 @@ class Im2TxtModel(object):
 
   def process_image(self, encoded_image, thread_id=0):
     """Decodes and processes an image string.
-
     Args:
       encoded_image: A scalar string Tensor; the encoded image.
       thread_id: Preprocessing thread id used to select the ordering of color
         distortions.
-
     Returns:
       A float32 Tensor of shape [height, width, 3]; the processed image.
     """
@@ -158,7 +156,6 @@ class Im2TxtModel(object):
 
   def build_inputs(self):
     """Input prefetching, preprocessing and batching.
-
     Outputs:
       self.images
       self.input_seqs
@@ -218,10 +215,8 @@ class Im2TxtModel(object):
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
-
     Inputs:
       self.images
-
     Outputs:
       self.image_embeddings
     """
@@ -233,7 +228,8 @@ class Im2TxtModel(object):
     inception_output = image_embedding.inception_v3(
         self.images,
         trainable=trainable,
-        is_training=self.is_training())
+        is_training=self.is_training(),
+		use_box=FLAGS.use_box)
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
 
@@ -241,12 +237,10 @@ class Im2TxtModel(object):
 
   def build_model(self):
     """Builds the model.
-
     Inputs:
       self.image_embeddings
       self.target_seqs (training and eval only)
       self.input_mask (training and eval only)
-
     Outputs:
       self.total_loss (training and eval only)
       self.target_cross_entropy_losses (training and eval only)
@@ -325,4 +319,4 @@ class Im2TxtModel(object):
     self.get_image_output()
     self.build_model()
     self.setup_inception_initializer()
-    self.setup_global_step()
+self.setup_global_step()

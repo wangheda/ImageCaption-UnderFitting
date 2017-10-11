@@ -36,6 +36,7 @@ def inception_v3(images,
                  use_batch_norm=True,
                  batch_norm_params=None,
                  add_summaries=True,
+                 use_box=False,
                  scope="InceptionV3"):
   """Builds an Inception V3 subgraph for image embeddings.
 
@@ -50,6 +51,7 @@ def inception_v3(images,
     batch_norm_params: Parameters for batch normalization. See
       tf.contrib.layers.batch_norm for details.
     add_summaries: Whether to add activation summaries.
+    use_box: Whether to use position information 
     scope: Optional Variable scope.
 
   Returns:
@@ -98,7 +100,12 @@ def inception_v3(images,
         net, end_points = inception_v3_base(images, scope=scope)
         with tf.variable_scope("logits"):
           shape = net.get_shape()
-          net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
+          print(net.get_shape().as_list())
+          if use_box:
+              net = tf.reshape(net, [tf.cast(shape[0],tf.int32), tf.cast(shape[1]*shape[2],tf.int32), tf.cast(shape[3],tf.int32)])
+          else:
+              net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
+
           net = slim.dropout(
               net,
               keep_prob=dropout_keep_prob,
