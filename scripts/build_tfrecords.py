@@ -45,6 +45,11 @@ tf.flags.DEFINE_string("train_captions_file", "data/ai_challenger_caption_train_
 tf.flags.DEFINE_string("validate_captions_file", "data/ai_challenger_caption_validation_20170910/caption_validation_annotations_20170910.json",
                        "Validation captions JSON file.")
 
+# use existing word counts file
+tf.flags.DEFINE_string("word_counts_input_file",
+                       "",
+                       "If defined, use existing word_counts_file.")
+
 # output files
 tf.flags.DEFINE_string("output_dir", "data/TFRecord_data", "Output directory for tfrecords.")
 tf.flags.DEFINE_string("word_counts_output_file",
@@ -78,8 +83,10 @@ tf.flags.DEFINE_integer("test_shards", 8,
 
 FLAGS = tf.flags.FLAGS
 
+
+
 ImageMetadata = namedtuple("ImageMetadata",
-                           ["id", "filename", "captions"])
+                           ["id", "filename", "captions", "flip_captions"])
 
 
 class Vocabulary(object):
@@ -100,6 +107,25 @@ class Vocabulary(object):
             return self._vocab[word]
         else:
             return self._unk_id
+
+def load_vocab(vocab_file):
+    if not tf.gfile.Exists(vocab_file):
+      print("Vocab file %s not found.", vocab_file)
+      exit()
+    print("Initializing vocabulary from file: %s", vocab_file)
+
+    with tf.gfile.GFile(vocab_file, mode="r") as f:
+      reverse_vocab = list(f.readlines())
+    reverse_vocab = [line.split()[0] for line in reverse_vocab]
+    assert FLAGS.start_word in reverse_vocab
+    assert FLAGS.end_word in reverse_vocab
+    assert FLAGS.unk_word not in reverse_vocab
+
+    unk_id = len(reverse_vocab)
+    vocab_dict = dict([(x, y) for (y, x) in enumerate(reverse_vocab)])
+    vocab = Vocabulary(vocab_dict, unk_id)
+    return vocab
+
 
 
 class ImageDecoder(object):
@@ -166,10 +192,21 @@ def _to_sequence_example(image, decoder, vocab):
     assert len(image.captions) == 1
     caption = image.captions[0]
     caption_ids = [vocab.word_to_id(word) for word in caption]
-    feature_lists = tf.train.FeatureLists(feature_list={
-        "image/caption": _bytes_feature_list(caption),
-        "image/caption_ids": _int64_feature_list(caption_ids)
-    })
+    flip_caption = image.flip_captions[0]
+    if not flip_caption:
+        feature_lists = tf.train.FeatureLists(feature_list={
+            "image/caption": _bytes_feature_list(caption),
+            "image/caption_ids": _int64_feature_list(caption_ids)
+        })
+    else:
+        flip_caption_ids = [vocab.word_to_id(word) for word in flip_caption]
+        feature_lists = tf.train.FeatureLists(feature_list={
+            "image/caption": _bytes_feature_list(caption),
+            "image/caption_ids": _int64_feature_list(caption_ids),
+            "image/flip_caption": _bytes_feature_list(flip_caption),
+            "image/flip_caption_ids": _int64_feature_list(flip_caption_ids)
+        })
+    
     sequence_example = tf.train.SequenceExample(
         context=context, feature_lists=feature_lists)
 
@@ -243,8 +280,8 @@ def _process_dataset(name, images, vocab, num_shards):
       num_shards: Integer number of shards for the output files.
     """
     # Break up each image into a separate entity for each caption.
-    images = [ImageMetadata(image.id, image.filename, [caption])
-              for image in images for caption in image.captions]
+    images = [ImageMetadata(image.id, image.filename, [caption], [flip_caption])
+              for image in images for (caption,flip_caption) in zip(image.captions, image.flip_captions)]
 
     # Shuffle the ordering of images. Make the randomization repeatable.
     random.seed(12345)
@@ -336,19 +373,32 @@ def _load_and_process_metadata(captions_file, image_dir):
     """
     image_id = set([])
     id_to_captions = {}
+    id_to_flip_captions = {}
     with open(captions_file, 'r') as f:
         caption_data = json.load(f)
     for data in caption_data:
         image_name = data['image_id'].split('.')[0]
         descriptions = data['caption']
+        if 'flip_caption' not in data:
+            flip_descriptions = [None] * len(descriptions)
+        else:
+            flip_descriptions = data['flip_caption']
+
         if image_name not in image_id:
             id_to_captions.setdefault(image_name, [])
+            id_to_flip_captions.setdefault(image_name, [])
             image_id.add(image_name)
+
         caption_num = len(descriptions)
+        assert caption_num == len(flip_descriptions)
+
         for i in range(caption_num):
             caption_temp = descriptions[i].strip().strip("。").replace('\n', '')
+            flip_caption_temp = flip_descriptions[i].strip().strip("。").replace('\n', '') \
+                                if flip_descriptions[i] else None
             if caption_temp != '':
                 id_to_captions[image_name].append(caption_temp)
+                id_to_flip_captions[image_name].append(flip_caption_temp)
 
 
     print("Loaded caption metadata for %d images from %s and image_id num is %s" %
@@ -362,7 +412,14 @@ def _load_and_process_metadata(captions_file, image_dir):
         filename = os.path.join(image_dir, base_filename + '.jpg')
         # captions = [_process_caption(c) for c in id_to_captions[base_filename]]
         captions = [_process_caption_jieba(c) for c in id_to_captions[base_filename]]
-        image_metadata.append(ImageMetadata(id, filename, captions))
+        flip_captions = []
+        for c in id_to_flip_captions[base_filename]:
+            if c:
+                flip_captions.append(_process_caption_jieba)
+            else:
+                flip_captions.append(None)
+
+        image_metadata.append(ImageMetadata(id, filename, captions, flip_captions))
         id = id + 1
         num_captions += len(captions)
     print("Finished processing %d captions for %d images in %s" %
@@ -406,10 +463,13 @@ def main(unused_argv):
 
     # Create vocabulary from the training captions.
     train_captions = [c for image in train_dataset for c in image.captions]
-    vocab = _create_vocab(train_captions)
+    if FLAGS.word_counts_input_file:
+        vocab = load_vocab(FLAGS.word_counts_input_file)
+    else:
+        vocab = _create_vocab(train_captions)
 
     _process_dataset("train", train_dataset, vocab, FLAGS.train_shards)
-    _process_dataset("val", validate_dataset, vocab, FLAGS.validate_shards)
+    #_process_dataset("val", validate_dataset, vocab, FLAGS.validate_shards)
     # _process_dataset("test", test_dataset, vocab, FLAGS.test_shards)
 
 if __name__ == "__main__":
