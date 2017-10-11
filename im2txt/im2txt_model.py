@@ -319,4 +319,4 @@ class Im2TxtModel(object):
     self.get_image_output()
     self.build_model()
     self.setup_inception_initializer()
-self.setup_global_step()
+    self.setup_global_step()
