@@ -64,6 +64,9 @@ tf.flags.DEFINE_integer("image_width", 299,
                         "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_float("initializer_scale", 0.08,
                         "Scale used to initialize model variables.")
+tf.flags.DEFINE_boolean("support_ingraph", False,
+                        "Whether the model supports in-graph inference. If the model supports it, "
+                        "the output of the model should contains key 'bs_result'")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -127,6 +130,9 @@ class Im2TxtModel(object):
 
     # Global step Tensor.
     self.global_step = None
+
+    # In-graph inference support
+    self.support_ingraph = FLAGS.support_ingraph
 
   def is_training(self):
     """Returns true if the model is built for training mode."""
@@ -251,7 +257,7 @@ class Im2TxtModel(object):
     caption_model = caption_model_fn()
 
     # model
-    logits = caption_model.create_model(
+    outputs = caption_model.create_model(
           input_seqs = self.input_seqs, 
           image_model_output = self.image_model_output,
           initializer = self.initializer,
@@ -261,8 +267,13 @@ class Im2TxtModel(object):
 
     # loss
     if self.mode == "inference":
-      tf.nn.softmax(logits, name="softmax")
+      if "logits" in outputs:
+        tf.nn.softmax(outputs["logits"], name="softmax")
+      elif "bs_results" in outputs:
+        self.predicted_ids = outputs["bs_results"].predicted_ids
+        self.scores = outputs["bs_results"].beam_search_decoder_output.scores
     else:
+      logits = outputs["logits"]
       targets = tf.reshape(self.target_seqs, [-1])
       weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
 

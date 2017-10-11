@@ -51,13 +51,13 @@ tf.flags.DEFINE_float("learning_rate_decay_factor", 0.5,
                         "Scale learning rate by this factor every num_epochs_per_decay epochs.")
 tf.flags.DEFINE_float("num_epochs_per_decay", 8.0,
                         "Scale learning rate by learning_rate_decay_factor every this many epochs.")
-tf.flags.DEFINE_integer("train_inception_learning_rate", 0.0005,
+tf.flags.DEFINE_float("train_inception_learning_rate", 0.0005,
                         "Learning rate when fine tuning the Inception v3 parameters.")
-tf.flags.DEFINE_integer("clip_gradients", 5.0,
+tf.flags.DEFINE_float("clip_gradients", 5.0,
                         "If not None, clip gradients to this value.")
 tf.flags.DEFINE_integer("max_checkpoints_to_keep", 5,
                         "Maximum number of recent checkpoints to preserve.")
-tf.flags.DEFINE_integer("keep_checkpoint_every_n_hours", 0.25,
+tf.flags.DEFINE_float("keep_checkpoint_every_n_hours", 0.25,
                         "Keep a checkpoint every this many hours.")
 tf.flags.DEFINE_integer("save_interval_secs", 600,
                         "Save a checkpoint every this many secs.")
