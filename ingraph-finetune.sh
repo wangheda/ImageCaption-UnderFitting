@@ -7,6 +7,7 @@ INCEPTION_CHECKPOINT="${DIR}/pretrained_model/inception_v3/inception_v3.ckpt"
 TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 
+model=ShowAndTellInGraphModel
 model_dir_name=show_and_tell_in_graph_model_finetune
 original_model_dir_name=show_and_tell_in_graph_model
 start_ckpt=420000
@@ -22,6 +23,7 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
+  --model=${model} \
   --train_inception=True \
   --train_inception_learning_rate=0.001 \
   --support_ingraph=True \
