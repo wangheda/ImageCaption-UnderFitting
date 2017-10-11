@@ -67,6 +67,8 @@ tf.flags.DEFINE_float("initializer_scale", 0.08,
 tf.flags.DEFINE_boolean("support_ingraph", False,
                         "Whether the model supports in-graph inference. If the model supports it, "
                         "the output of the model should contains key 'bs_result'")
+tf.flags.DEFINE_boolean("use_box", False,
+                        "Whether to remain position information in inception v3 output feature matrix")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -233,7 +235,8 @@ class Im2TxtModel(object):
     inception_output = image_embedding.inception_v3(
         self.images,
         trainable=trainable,
-        is_training=self.is_training())
+        is_training=self.is_training(),
+        use_box=FLAGS.use_box)
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
 
