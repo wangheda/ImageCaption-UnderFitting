@@ -36,8 +36,8 @@ def inception_v3(images,
                  use_batch_norm=True,
                  batch_norm_params=None,
                  add_summaries=True,
-                 use_box=False,
-                 scope="InceptionV3"):
+                 scope="InceptionV3",
+                 use_box=False):
   """Builds an Inception V3 subgraph for image embeddings.
 
   Args:
@@ -51,7 +51,7 @@ def inception_v3(images,
     batch_norm_params: Parameters for batch normalization. See
       tf.contrib.layers.batch_norm for details.
     add_summaries: Whether to add activation summaries.
-    use_box: Whether to use position information 
+    use_box: Whether to use position information.
     scope: Optional Variable scope.
 
   Returns:
