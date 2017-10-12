@@ -210,16 +210,13 @@ class Im2TxtModel(object):
               caption_feature=FLAGS.caption_feature_name,
               flip_caption_feature=FLAGS.flip_caption_feature_name)
           # random decides flip or not
-          uniform_random = random.uniform(0, 1.0)
-          if uniform_random < 0.5:
-            # flip
-            image = self.process_image(encoded_image, thread_id=thread_id, flip=True)
-            images_and_captions.append([image, flip_caption])
-          else:
-            # not flip
-            image = self.process_image(encoded_image, thread_id=thread_id)
-            images_and_captions.append([image, caption])
-
+          flip_image = self.process_image(encoded_image, thread_id=thread_id, flip=True)
+          image = self.process_image(encoded_image, thread_id=thread_id)
+          maybe_flip_image, maybe_flip_caption = tf.cond(
+            tf.less(tf.random_uniform([],0,1.0), 0.5), 
+            [flip_image, flip_caption], 
+            [image, caption])
+          images_and_captions.append([maybe_flip_image, maybe_flip_caption])
         else:
           encoded_image, caption, _ = input_ops.parse_sequence_example(
               serialized_sequence_example,
