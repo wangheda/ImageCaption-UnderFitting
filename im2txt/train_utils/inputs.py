@@ -23,8 +23,6 @@ from __future__ import print_function
 import tensorflow as tf
 
 
-FLAGS = tf.app.flags.FLAGS
-
 def parse_sequence_example(serialized, image_feature, caption_feature, flip_caption_feature=None):
   """Parses a tensorflow.SequenceExample into an image and caption.
 
