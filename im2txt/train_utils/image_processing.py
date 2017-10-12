@@ -23,7 +23,7 @@ from __future__ import print_function
 import tensorflow as tf
 
 
-def distort_image(image, thread_id):
+def distort_image(image, thread_id, flip=False):
   """Perform random distortions on an image.
 
   Args:
@@ -35,9 +35,10 @@ def distort_image(image, thread_id):
     distorted_image: A float32 Tensor of shape [height, width, 3] with values in
       [0, 1].
   """
-#  # Randomly flip horizontally.
-#  with tf.name_scope("flip_horizontal", values=[image]):
-#    image = tf.image.random_flip_left_right(image)
+  # Randomly flip horizontally.
+  if flip:
+    with tf.name_scope("flip_horizontal", values=[image]):
+      image = tf.image.random_flip_left_right(image)
 
   # Randomly distort the colors based on thread id.
   color_ordering = thread_id % 2
@@ -66,7 +67,8 @@ def process_image(encoded_image,
                   resize_height=346,
                   resize_width=346,
                   thread_id=0,
-                  image_format="jpeg"):
+                  image_format="jpeg",
+                  flip=False):
   """Decode an image, resize and apply random distortions.
 
   In training, images are distorted slightly differently depending on thread_id.
@@ -123,7 +125,7 @@ def process_image(encoded_image,
 
   # Randomly distort the image.
   if is_training:
-    image = distort_image(image, thread_id)
+    image = distort_image(image, thread_id, flip)
 
   image_summary("final_image", image)
 
