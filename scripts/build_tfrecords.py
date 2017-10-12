@@ -119,7 +119,7 @@ def load_vocab(vocab_file):
     reverse_vocab = [line.split()[0] for line in reverse_vocab]
     assert FLAGS.start_word in reverse_vocab
     assert FLAGS.end_word in reverse_vocab
-    assert FLAGS.unk_word not in reverse_vocab
+    assert FLAGS.unknown_word not in reverse_vocab
 
     unk_id = len(reverse_vocab)
     vocab_dict = dict([(x, y) for (y, x) in enumerate(reverse_vocab)])
@@ -415,7 +415,7 @@ def _load_and_process_metadata(captions_file, image_dir):
         flip_captions = []
         for c in id_to_flip_captions[base_filename]:
             if c:
-                flip_captions.append(_process_caption_jieba)
+                flip_captions.append(_process_caption_jieba(c))
             else:
                 flip_captions.append(None)
 
