@@ -23,7 +23,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-
+import random
 import tensorflow as tf
 import im2txt_models
 
@@ -210,7 +210,7 @@ class Im2TxtModel(object):
               caption_feature=FLAGS.caption_feature_name,
               flip_caption_feature=FLAGS.flip_caption_feature_name)
           # random decides flip or not
-          uniform_random = tf.random_uniform([], 0, 1.0, seed=seed)
+          uniform_random = random.uniform(0, 1.0)
           if uniform_random < 0.5:
             # flip
             image = self.process_image(encoded_image, thread_id=thread_id, flip=True)
