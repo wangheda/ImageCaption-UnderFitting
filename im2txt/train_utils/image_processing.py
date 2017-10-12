@@ -38,7 +38,7 @@ def distort_image(image, thread_id, flip=False):
   # Randomly flip horizontally.
   if flip:
     with tf.name_scope("flip_horizontal", values=[image]):
-      image = tf.image.random_flip_left_right(image)
+      image = tf.image.flip_left_right(image)
 
   # Randomly distort the colors based on thread id.
   color_ordering = thread_id % 2
