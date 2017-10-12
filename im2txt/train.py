@@ -34,7 +34,7 @@ tf.flags.DEFINE_boolean("train_inception", False,
                         "Whether to train inception submodel variables.")
 
 tf.flags.DEFINE_integer("number_of_steps", 1000000, "Number of training steps.")
-tf.flags.DEFINE_integer("log_every_n_steps", 1,
+tf.flags.DEFINE_integer("log_every_n_steps", 10,
                         "Frequency at which loss and global step are logged.")
 
 
