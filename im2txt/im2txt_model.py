@@ -213,8 +213,8 @@ class Im2TxtModel(object):
           image = self.process_image(encoded_image, thread_id=thread_id)
           maybe_flip_image, maybe_flip_caption = tf.cond(
             tf.less(tf.random_uniform([],0,1.0), 0.5), 
-            [flip_image, flip_caption], 
-            [image, caption])
+            lambda: [flip_image, flip_caption], 
+            lambda: [image, caption])
           images_and_captions.append([maybe_flip_image, maybe_flip_caption])
         else:
           encoded_image, caption, _ = input_ops.parse_sequence_example(
