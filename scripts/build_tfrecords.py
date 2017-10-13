@@ -116,7 +116,7 @@ def load_vocab(vocab_file):
 
     with tf.gfile.GFile(vocab_file, mode="r") as f:
       reverse_vocab = list(f.readlines())
-    reverse_vocab = [line.split()[0] for line in reverse_vocab]
+    reverse_vocab = [line.split()[0].decode('utf-8') for line in reverse_vocab]
     assert FLAGS.start_word in reverse_vocab
     assert FLAGS.end_word in reverse_vocab
     assert FLAGS.unknown_word not in reverse_vocab
