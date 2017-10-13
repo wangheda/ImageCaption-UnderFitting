@@ -62,7 +62,8 @@ tf.flags.DEFINE_float("keep_checkpoint_every_n_hours", 0.25,
 tf.flags.DEFINE_integer("save_interval_secs", 600,
                         "Save a checkpoint every this many secs.")
 tf.flags.DEFINE_string("exclude_variable_patterns", None,
-                       "Variables that will not be loaded from and saved to checkpoints.")
+                       "Filter (by comma separated regular expressions) variables that will not be"
+                       " loaded from and saved to checkpoints.")
 
 import im2txt_model
 
