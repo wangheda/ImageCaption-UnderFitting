@@ -4,8 +4,9 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 model_name="show_and_tell_in_graph_model_finetune"
 num_processes=2
-gpu_fraction=0.4
+gpu_fraction=0.40
 device=1
+model=ShowAndTellInGraphModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
 for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do 
@@ -27,14 +28,19 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --checkpoint_path=${CHECKPOINT_PATH} \
         --vocab_file=${DIR}/data/word_counts.txt \
         --output=${OUTPUT_DIR}/part-${prefix}.json \
+        --model=${model} \
         --support_ingraph=True \
         --gpu_memory_fraction=$gpu_fraction"
     fi
   done | parallel -j $num_processes
 
-  python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json
-  echo output saved to ${OUTPUT_DIR}/out.json
+  if [ ! -f ${OUTPUT_DIR}/out.json ]; then
+    python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json
+    echo output saved to ${OUTPUT_DIR}/out.json
+  fi
 
-  python ${DIR}/tools/eval/run_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE | tee ${OUTPUT_DIR}/out.eval | grep ^Eval
-  echo eval result saved to ${OUTPUT_DIR}/out.eval
+  if [ ! -f ${OUTPUT_DIR}/out.eval ]; then
+    python ${DIR}/tools/eval/run_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE | tee ${OUTPUT_DIR}/out.eval | grep ^Eval
+    echo eval result saved to ${OUTPUT_DIR}/out.eval
+  fi
 done

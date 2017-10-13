@@ -18,7 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-
+import re
 import tensorflow as tf
 
 FLAGS = tf.app.flags.FLAGS
@@ -61,6 +61,8 @@ tf.flags.DEFINE_float("keep_checkpoint_every_n_hours", 0.25,
                         "Keep a checkpoint every this many hours.")
 tf.flags.DEFINE_integer("save_interval_secs", 600,
                         "Save a checkpoint every this many secs.")
+tf.flags.DEFINE_string("exclude_variable_patterns", None,
+                       "Variables that will not be loaded from and saved to checkpoints.")
 
 import im2txt_model
 
@@ -115,9 +117,38 @@ def main(unused_argv):
         clip_gradients=FLAGS.clip_gradients,
         learning_rate_decay_fn=learning_rate_decay_fn)
 
-    # Set up the Saver for saving and restoring model checkpoints.
-    saver = tf.train.Saver(max_to_keep=FLAGS.max_checkpoints_to_keep, 
-                           keep_checkpoint_every_n_hours=FLAGS.keep_checkpoint_every_n_hours)
+
+    local_init_op = tf.contrib.slim.learning._USE_DEFAULT
+
+    if FLAGS.exclude_variable_patterns is not None:
+      exclude_variables = []
+      exclude_variable_names = []
+
+      exclude_variable_patterns = map(lambda x: re.compile(x), FLAGS.exclude_variable_patterns.strip().split(","))
+      all_variables = tf.contrib.slim.get_variables()
+
+      for var in all_variables:
+        for pattern in exclude_variable_patterns:
+          if pattern.match(var.name):
+            exclude_variables.append(var)
+            exclude_variable_names.append(var.name)
+            print("variables to exclude:", var.name)
+            break
+      print("%d variables to exclude." % len(exclude_variable_names))
+
+      if exclude_variables:
+        local_init_op = tf.variables_initializer(exclude_variables)
+
+      variables_to_restore = tf.contrib.slim.get_variables_to_restore(exclude=exclude_variable_names)
+
+      # Set up the Saver for saving and restoring model checkpoints.
+      saver = tf.train.Saver(variables_to_restore,
+                             max_to_keep=FLAGS.max_checkpoints_to_keep,
+                             keep_checkpoint_every_n_hours=FLAGS.keep_checkpoint_every_n_hours)
+    else:
+      # Set up the Saver for saving and restoring model checkpoints.
+      saver = tf.train.Saver(max_to_keep=FLAGS.max_checkpoints_to_keep,
+                             keep_checkpoint_every_n_hours=FLAGS.keep_checkpoint_every_n_hours)
 
   # Run training.
   tf.contrib.slim.learning.train(
@@ -127,6 +158,7 @@ def main(unused_argv):
       graph = g,
       global_step = model.global_step,
       number_of_steps = FLAGS.number_of_steps,
+      local_init_op = local_init_op,
       init_fn = model.init_fn,
       save_summaries_secs = 120,
       save_interval_secs = FLAGS.save_interval_secs,
