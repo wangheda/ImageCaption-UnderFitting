@@ -423,32 +423,21 @@ def _load_and_process_metadata(captions_file, image_dir):
     """
     image_id = set([])
     id_to_captions = {}
-    if FLAGS.build_flip_caption:
-        id_to_flip_captions = {}
     with open(captions_file, 'r') as f:
         caption_data = json.load(f)
     for data in caption_data:
         image_name = data['image_id'].split('.')[0]
         descriptions = data['caption']
-        if FLAGS.build_flip_caption:
-            flip_descriptions = [func_flip_caption(caption) for caption in descriptions]
-
         if image_name not in image_id:
             id_to_captions.setdefault(image_name, [])
-            if FLAGS.build_flip_caption:
-                id_to_flip_captions.setdefault(image_name, [])
             image_id.add(image_name)
 
         caption_num = len(descriptions)
 
         for i in range(caption_num):
             caption_temp = descriptions[i].strip().strip("。").replace('\n', '')
-            if FLAGS.build_flip_caption:
-                flip_caption_temp = flip_descriptions[i].strip().strip("。").replace('\n', '')
             if caption_temp != '':
                 id_to_captions[image_name].append(caption_temp)
-                if FLAGS.build_flip_caption:
-                    id_to_flip_captions[image_name].append(flip_caption_temp)
 
 
     print("Loaded caption metadata for %d images from %s and image_id num is %s" %
@@ -463,7 +452,7 @@ def _load_and_process_metadata(captions_file, image_dir):
         # captions = [_process_caption(c) for c in id_to_captions[base_filename]]
         captions = [_process_caption_jieba(c) for c in id_to_captions[base_filename]]
         if FLAGS.build_flip_caption:
-            flip_captions = [_process_caption_jieba(c) for c in id_to_flip_captions[base_filename]]
+            flip_captions = [_process_caption_jieba(func_flip_caption(c)) for c in id_to_captions[base_filename]]
             image_metadata.append(ImageMetadata(id, filename, captions, flip_captions))
         else:
             image_metadata.append(ImageMetadata(id, filename, captions))
@@ -510,10 +499,12 @@ def main(unused_argv):
 
 
     # Create vocabulary from the training captions.
-    train_captions = [c for image in train_dataset for c in image.captions]
     if FLAGS.word_counts_input_file:
         vocab = load_vocab(FLAGS.word_counts_input_file)
     else:
+        train_captions = [c for image in train_dataset for c in image.captions]
+        if FLAGS.build_flip_caption:
+            train_captions.extend([c for image in train_dataset for c in image.flip_captions])
         vocab = _create_vocab(train_captions)
 
     _process_dataset("train", train_dataset, vocab, FLAGS.train_shards)
