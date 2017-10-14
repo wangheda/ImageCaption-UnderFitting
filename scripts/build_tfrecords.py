@@ -81,12 +81,58 @@ tf.flags.DEFINE_integer("validate_shards", 4,
 tf.flags.DEFINE_integer("test_shards", 8,
                         "Number of shards in testing TFRecord files.")
 
+tf.flags.DEFINE_boolean("build_flip_caption", False,
+                        "Whether to generate flip caption. If True, only build train set,"
+                        "If set False, build train and dev set")
+
 FLAGS = tf.flags.FLAGS
 
 
+if FLAGS.build_flip_caption:
+    ImageMetadata = namedtuple("ImageMetadata",
+                               ["id", "filename", "captions", "flip_captions"])
+else:
+    ImageMetadata = namedtuple("ImageMetadata",
+                               ["id", "filename", "captions"])
 
-ImageMetadata = namedtuple("ImageMetadata",
-                           ["id", "filename", "captions", "flip_captions"])
+
+# functions to flip caption
+def find_all(string, query):
+    # return all positions
+    query_len = len(query)
+    positions = []
+    beg = 0
+    pos = string.find(query, beg)
+    while pos != -1:
+        positions.append(pos)
+        beg = pos + query_len
+        pos = string.find(query, beg)
+    return positions
+
+def func_flip_caption(caption):
+    lr_pos = find_all(caption, u"左右")
+    noflip_pos = []
+    for pos in lr_pos:
+        noflip_pos.append(pos)
+        noflip_pos.append(pos + 1)
+    l_pos = find_all(caption, u"左")
+    l_pos = [pos for pos in l_pos if pos not in noflip_pos]
+
+    r_pos = find_all(caption, u"右")
+    r_pos = [pos for pos in r_pos if pos not in noflip_pos]
+
+    if not l_pos and not r_pos:
+        return caption
+
+    new_caption = ""
+    for i,c in enumerate(caption):
+        if i in l_pos:
+            new_caption += u"右"
+        elif i in r_pos:
+            new_caption += u"左"
+        else:
+            new_caption += c
+    return new_caption
 
 
 class Vocabulary(object):
@@ -192,13 +238,13 @@ def _to_sequence_example(image, decoder, vocab):
     assert len(image.captions) == 1
     caption = image.captions[0]
     caption_ids = [vocab.word_to_id(word) for word in caption]
-    flip_caption = image.flip_captions[0]
-    if not flip_caption:
+    if not FLAGS.build_flip_caption:
         feature_lists = tf.train.FeatureLists(feature_list={
             "image/caption": _bytes_feature_list(caption),
             "image/caption_ids": _int64_feature_list(caption_ids)
         })
     else:
+        flip_caption = image.flip_captions[0]
         flip_caption_ids = [vocab.word_to_id(word) for word in flip_caption]
         feature_lists = tf.train.FeatureLists(feature_list={
             "image/caption": _bytes_feature_list(caption),
@@ -280,8 +326,12 @@ def _process_dataset(name, images, vocab, num_shards):
       num_shards: Integer number of shards for the output files.
     """
     # Break up each image into a separate entity for each caption.
-    images = [ImageMetadata(image.id, image.filename, [caption], [flip_caption])
-              for image in images for (caption,flip_caption) in zip(image.captions, image.flip_captions)]
+    if FLAGS.build_flip_caption:
+        images = [ImageMetadata(image.id, image.filename, [caption], [flip_caption])
+                  for image in images for (caption,flip_caption) in zip(image.captions, image.flip_captions)]
+    else:
+        images = [ImageMetadata(image.id, image.filename, [caption])
+                  for image in images for caption in image.captions]
 
     # Shuffle the ordering of images. Make the randomization repeatable.
     random.seed(12345)
@@ -373,32 +423,32 @@ def _load_and_process_metadata(captions_file, image_dir):
     """
     image_id = set([])
     id_to_captions = {}
-    id_to_flip_captions = {}
+    if FLAGS.build_flip_caption:
+        id_to_flip_captions = {}
     with open(captions_file, 'r') as f:
         caption_data = json.load(f)
     for data in caption_data:
         image_name = data['image_id'].split('.')[0]
         descriptions = data['caption']
-        if 'flip_caption' not in data:
-            flip_descriptions = [None] * len(descriptions)
-        else:
-            flip_descriptions = data['flip_caption']
+        if FLAGS.build_flip_caption:
+            flip_descriptions = [func_flip_caption(caption) for caption in descriptions]
 
         if image_name not in image_id:
             id_to_captions.setdefault(image_name, [])
-            id_to_flip_captions.setdefault(image_name, [])
+            if FLAGS.build_flip_caption:
+                id_to_flip_captions.setdefault(image_name, [])
             image_id.add(image_name)
 
         caption_num = len(descriptions)
-        assert caption_num == len(flip_descriptions)
 
         for i in range(caption_num):
             caption_temp = descriptions[i].strip().strip("。").replace('\n', '')
-            flip_caption_temp = flip_descriptions[i].strip().strip("。").replace('\n', '') \
-                                if flip_descriptions[i] else None
+            if FLAGS.build_flip_caption:
+                flip_caption_temp = flip_descriptions[i].strip().strip("。").replace('\n', '')
             if caption_temp != '':
                 id_to_captions[image_name].append(caption_temp)
-                id_to_flip_captions[image_name].append(flip_caption_temp)
+                if FLAGS.build_flip_caption:
+                    id_to_flip_captions[image_name].append(flip_caption_temp)
 
 
     print("Loaded caption metadata for %d images from %s and image_id num is %s" %
@@ -412,14 +462,11 @@ def _load_and_process_metadata(captions_file, image_dir):
         filename = os.path.join(image_dir, base_filename + '.jpg')
         # captions = [_process_caption(c) for c in id_to_captions[base_filename]]
         captions = [_process_caption_jieba(c) for c in id_to_captions[base_filename]]
-        flip_captions = []
-        for c in id_to_flip_captions[base_filename]:
-            if c:
-                flip_captions.append(_process_caption_jieba(c))
-            else:
-                flip_captions.append(None)
-
-        image_metadata.append(ImageMetadata(id, filename, captions, flip_captions))
+        if FLAGS.build_flip_caption:
+            flip_captions = [_process_caption_jieba(c) for c in id_to_flip_captions[base_filename]]
+            image_metadata.append(ImageMetadata(id, filename, captions, flip_captions))
+        else:
+            image_metadata.append(ImageMetadata(id, filename, captions))
         id = id + 1
         num_captions += len(captions)
     print("Finished processing %d captions for %d images in %s" %
@@ -445,8 +492,9 @@ def main(unused_argv):
     # Load image metadata from caption files.
     train_dataset = _load_and_process_metadata(FLAGS.train_captions_file,
                                                     FLAGS.train_image_dir)
-    validate_dataset = _load_and_process_metadata(FLAGS.validate_captions_file,
-                                                  FLAGS.validate_image_dir)
+    if not FLAGS.build_flip_caption:
+        validate_dataset = _load_and_process_metadata(FLAGS.validate_captions_file,
+                                                      FLAGS.validate_image_dir)
 
     """
     # Redistribute the MSCOCO data as follows:
@@ -469,7 +517,8 @@ def main(unused_argv):
         vocab = _create_vocab(train_captions)
 
     _process_dataset("train", train_dataset, vocab, FLAGS.train_shards)
-    #_process_dataset("val", validate_dataset, vocab, FLAGS.validate_shards)
+    if not FLAGS.build_flip_caption:
+        _process_dataset("val", validate_dataset, vocab, FLAGS.validate_shards)
     # _process_dataset("test", test_dataset, vocab, FLAGS.test_shards)
 
 if __name__ == "__main__":
