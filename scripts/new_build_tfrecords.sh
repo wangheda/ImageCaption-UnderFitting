@@ -13,7 +13,7 @@ VOCAB_FILE="${DIR}/../data/word_counts.txt"
 # input directories
 TRAIN_IMAGE_DIR="${DIR}/../data/ai_challenger_caption_train_20170902/caption_train_images_20170902"
 #TRAIN_CAPTIONS_FILE="${DIR}/../data/ai_challenger_caption_train_20170902/caption_train_annotations_20170902.json"
-TRAIN_CAPTIONS_FILE="/home/limiao/aug_train_annotations.json"
+TRAIN_CAPTIONS_FILE="${DIR}/../data/aug_train_annotations.json"
 VALIDATE_IMAGE_DIR="${DIR}/../data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
 VALIDATE_CAPTIONS_FILE="${DIR}/../data/ai_challenger_caption_validation_20170910/caption_validation_annotations_20170910.json"
 
