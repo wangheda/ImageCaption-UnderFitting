@@ -230,7 +230,7 @@ class Im2TxtModel(object):
     if self.mode == "inference":
       trainable = False
     else:
-      trainable = FLAGS.train_inception
+      trainable = FLAGS.train_inception or FLAGS.train_inception_with_decay
 
     inception_output = image_embedding.inception_v3(
         self.images,

@@ -32,6 +32,8 @@ tf.flags.DEFINE_string("inception_checkpoint_file", "",
                        "Path to a pretrained inception_v3 model.")
 tf.flags.DEFINE_boolean("train_inception", False,
                         "Whether to train inception submodel variables.")
+tf.flags.DEFINE_boolean("train_inception_with_decay", False,
+                        "Whether to train inception submodel variables with decay.")
 
 tf.flags.DEFINE_integer("number_of_steps", 1000000, "Number of training steps.")
 tf.flags.DEFINE_integer("log_every_n_steps", 10,
@@ -89,7 +91,7 @@ def main(unused_argv):
 
     # Set up the learning rate.
     learning_rate_decay_fn = None
-    if FLAGS.train_inception:
+    if FLAGS.train_inception and not FLAGS.train_inception_with_decay:
       learning_rate = tf.constant(FLAGS.train_inception_learning_rate)
     else:
       learning_rate = tf.constant(FLAGS.initial_learning_rate)
