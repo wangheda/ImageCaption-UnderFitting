@@ -97,7 +97,7 @@ class ShowAndTellAdvancedModel(object):
           def inverse_sigmoid_decay_fn(i):
             k = float(FLAGS.inverse_sigmoid_decay_k)
             step = tf.cast(tf.maximum(i - FLAGS.scheduled_sampling_starting_step, 0), tf.float32)
-            p = k / (k + tf.exp(step / k))
+            p = 1.0 - k / (k + tf.exp(step / k))
             return p
           
           sampling_probability = inverse_sigmoid_decay_fn(global_step)
