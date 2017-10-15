@@ -23,7 +23,6 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
-
 import tensorflow as tf
 import im2txt_models
 
@@ -56,6 +55,8 @@ tf.flags.DEFINE_string("image_feature_name", "image/data",
                         "Name of the SequenceExample context feature containing image data.")
 tf.flags.DEFINE_string("caption_feature_name", "image/caption_ids",
                         "Name of the SequenceExample feature list containing integer captions.")
+tf.flags.DEFINE_string("flip_caption_feature_name", "image/flip_caption_ids",
+                        "Name of the SequenceExample feature list containing integer flip captions.")
 tf.flags.DEFINE_integer("num_preprocess_threads", 4,
                         "Number of threads for image preprocessing. Should be a multiple of 2.")
 tf.flags.DEFINE_integer("image_height", 299,
@@ -67,6 +68,9 @@ tf.flags.DEFINE_float("initializer_scale", 0.08,
 tf.flags.DEFINE_boolean("support_ingraph", False,
                         "Whether the model supports in-graph inference. If the model supports it, "
                         "the output of the model should contains key 'bs_result'")
+tf.flags.DEFINE_boolean("support_flip", False,
+                        "Whether the model supports flip image. If the model supports it, "
+                        "the SequenceExample should contains feature key 'image/flip_caption_ids'")
 tf.flags.DEFINE_boolean("use_box", False,
                         "Whether to remain position information in inception v3 output feature matrix")
 
@@ -140,7 +144,7 @@ class Im2TxtModel(object):
     """Returns true if the model is built for training mode."""
     return self.mode == "train"
 
-  def process_image(self, encoded_image, thread_id=0):
+  def process_image(self, encoded_image, thread_id=0, flip=False):
     """Decodes and processes an image string.
 
     Args:
@@ -156,7 +160,8 @@ class Im2TxtModel(object):
                                           height=FLAGS.image_height,
                                           width=FLAGS.image_width,
                                           thread_id=thread_id,
-                                          image_format=FLAGS.image_format)
+                                          image_format=FLAGS.image_format,
+                                          flip=flip)
 
   def build_inputs(self):
     """Input prefetching, preprocessing and batching.
@@ -198,12 +203,27 @@ class Im2TxtModel(object):
       images_and_captions = []
       for thread_id in range(FLAGS.num_preprocess_threads):
         serialized_sequence_example = input_queue.dequeue()
-        encoded_image, caption = input_ops.parse_sequence_example(
-            serialized_sequence_example,
-            image_feature=FLAGS.image_feature_name,
-            caption_feature=FLAGS.caption_feature_name)
-        image = self.process_image(encoded_image, thread_id=thread_id)
-        images_and_captions.append([image, caption])
+        if FLAGS.support_flip:
+          encoded_image, caption, flip_caption = input_ops.parse_sequence_example(
+              serialized_sequence_example,
+              image_feature=FLAGS.image_feature_name,
+              caption_feature=FLAGS.caption_feature_name,
+              flip_caption_feature=FLAGS.flip_caption_feature_name)
+          # random decides flip or not
+          flip_image = self.process_image(encoded_image, thread_id=thread_id, flip=True)
+          image = self.process_image(encoded_image, thread_id=thread_id)
+          maybe_flip_image, maybe_flip_caption = tf.cond(
+            tf.less(tf.random_uniform([],0,1.0), 0.5), 
+            lambda: [flip_image, flip_caption], 
+            lambda: [image, caption])
+          images_and_captions.append([maybe_flip_image, maybe_flip_caption])
+        else:
+          encoded_image, caption, _ = input_ops.parse_sequence_example(
+              serialized_sequence_example,
+              image_feature=FLAGS.image_feature_name,
+              caption_feature=FLAGS.caption_feature_name)
+          image = self.process_image(encoded_image, thread_id=thread_id)
+          images_and_captions.append([image, caption])
 
       # Batch inputs.
       queue_capacity = (2 * FLAGS.num_preprocess_threads *

@@ -26,6 +26,12 @@ generated yet, run the script (after setting up the data path):
 
 to create the tfrecord files. It may take 20-30 minutes to create all the files.
 
+Because of Data Augmentation, we modify the build_tfrecords.py. There are 2 things to mention:
+1. If the train_captions_file contains key "flip_caption", the code will generate feature "flip_caption" to tfrecords to support image filpping.
+2. We need a vocabulary to generate caption ids. we can build the vocab from the training set (keep the "word_counts_input_file" flag empty and set a value for the "word_counts_output_file" flag) or load an existing vocab (set a value for the "word_counts_input_file" flag).
+
+You can find some help by comparing "scripts/build_tfrecords.sh" and "scripts/new_build_tfrecords.sh".
+
 # Training 
 
 First, you need to get the inception v3 network checkpoint, goto directory 
