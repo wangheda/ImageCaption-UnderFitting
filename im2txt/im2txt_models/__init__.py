@@ -14,8 +14,17 @@ tf.flags.DEFINE_integer("beam_width", 3,
 tf.flags.DEFINE_integer("max_caption_length", 20,
                         "The max caption length for beam search decoding")
 
+# flags for advanced model
+tf.flags.DEFINE_boolean("use_scheduled_sampling", True,
+                        "Whether to use scheduled sampling during training.")
+tf.flags.DEFINE_float("inverse_sigmoid_decay_k", 21000,
+                        "The k in inverse_sigmoid_decay method. This setting will half sampling rate at about 210000 steps.")
+tf.flags.DEFINE_integer("scheduled_sampling_starting_step", 0,
+                        "Set this up properly in finetuning.")
+
 
 # models
 from show_and_tell_model import ShowAndTellModel
 from show_and_tell_in_graph_model import ShowAndTellInGraphModel
+from show_and_tell_advanced_model import ShowAndTellAdvancedModel
 

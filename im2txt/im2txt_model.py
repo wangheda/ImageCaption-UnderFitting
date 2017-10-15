@@ -266,6 +266,7 @@ class Im2TxtModel(object):
           initializer = self.initializer,
           mode = self.mode,
           target_seqs = self.target_seqs,
+          global_step = self.global_step,
           input_mask = self.input_mask)
 
     # loss
@@ -324,8 +325,8 @@ class Im2TxtModel(object):
 
   def build(self):
     """Creates all ops for training and evaluation."""
+    self.setup_global_step()
     self.build_inputs()
     self.get_image_output()
     self.build_model()
     self.setup_inception_initializer()
-    self.setup_global_step()
