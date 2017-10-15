@@ -1,8 +1,8 @@
 #!/bin/bash
 
-model_name="show_and_tell_in_graph_model"
+model_name="show_and_tell_in_graph_model_finetune"
 model="ShowAndTellInGraphModel"
-ckpt=5044
+ckpt=840000
 num_processes=2
 gpu_fraction=0.4
 device=1

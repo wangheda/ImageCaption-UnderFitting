@@ -8,9 +8,9 @@ TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 
 model=ShowAndTellInGraphModel
-model_dir_name=show_and_tell_in_graph_model_finetune
-original_model_dir_name=show_and_tell_in_graph_model
-start_ckpt=420000
+model_dir_name=show_and_tell_in_graph_model_adam_finetune
+original_model_dir_name=show_and_tell_in_graph_model_adam
+start_ckpt=105000
 
 # copy the starting checkpoint
 if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
@@ -25,6 +25,9 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
   --train_inception=True \
-  --train_inception_learning_rate=0.001 \
+  --train_inception_learning_rate=0.0003 \
   --support_ingraph=True \
-  --number_of_steps=840000
+  --exclude_variable_patterns='OptimizeLoss/InceptionV3/.+/Adam.*' \
+  --optimizer=Adam \
+  --clip_gradients=1.0 \
+  --number_of_steps=210000
