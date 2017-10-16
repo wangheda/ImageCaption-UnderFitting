@@ -67,7 +67,10 @@ tf.flags.DEFINE_float("initializer_scale", 0.08,
                         "Scale used to initialize model variables.")
 tf.flags.DEFINE_boolean("support_ingraph", False,
                         "Whether the model supports in-graph inference. If the model supports it, "
-                        "the output of the model should contains key 'bs_result'")5
+                        "the output of the model should contains key 'bs_result'")
+tf.flags.DEFINE_boolean("support_flip", False,
+                        "Whether the model supports flip image. If the model supports it, "
+                        "the SequenceExample should contains feature key 'image/flip_caption_ids'")
 tf.flags.DEFINE_boolean("use_box", False,
                         "Whether to remain position information in inception v3 output feature matrix")
 
