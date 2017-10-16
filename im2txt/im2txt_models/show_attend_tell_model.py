@@ -14,6 +14,7 @@ class ShowAttendTellModel(object):
                     **unused_params):
         self.n_words = FLAGS.vocab_size
         self.dim_embed = FLAGS.embedding_size
+
         self.dim_ctx_input = 2048
         self.dim_ctx = 512 # dimensiion of LSTM input
         self.dim_hidden = FLAGS.num_lstm_units # dimension of hidden size in LSTM
@@ -33,6 +34,7 @@ class ShowAttendTellModel(object):
 
         self.image_att_W = self.init_weight(self.dim_ctx_input,self.dim_ctx,name='image_encode_W')
         self.hidden_att_W = self.init_weight(self.dim_hidden,self.dim_ctx, name='hidden_att_W')
+
         self.pre_att_b = self.init_bias(self.dim_ctx, name='pre_att_b')
 
         self.att_W = self.init_weight(self.dim_ctx, 1, name='att_W')
@@ -62,6 +64,7 @@ class ShowAttendTellModel(object):
                 input_keep_prob=FLAGS.lstm_dropout_keep_prob,
                 output_keep_prob=FLAGS.lstm_dropout_keep_prob
             )
+
             self.n_lstm_steps = tf.reduce_max(tf.reduce_sum(input_mask, 1))
             self.batch_size = tf.cast(input_mask.get_shape()[0],tf.int32)
 
@@ -88,6 +91,7 @@ class ShowAttendTellModel(object):
                                             shape=[None, sum(lstm_cell.state_size)],
                                             name="state_feed")
                 state_tuple = tf.split(value=state_feed, num_or_size_splits=2, axis=1)
+
 
                 x_t = tf.squeeze(seq_embeddings, axis=[1])
 
@@ -137,14 +141,17 @@ class ShowAttendTellModel(object):
                     alpha = tf.matmul(context_encode_flat, self.att_W) + self.att_b
                     alpha = tf.reshape(alpha, [-1, self.ctx_shape[0]])
                     alpha = tf.nn.softmax(alpha)
+
                     weighted_context = tf.reduce_sum(self.image * tf.expand_dims(alpha,2),1)
 
                     lstm_preactive = tf.concat(axis=1, values=[h, x_t, weighted_context])
                     lstm_preactive = tf.matmul(lstm_preactive, self.lstm_W)
+
                     h, state = lstm_cell(lstm_preactive, state)
 
                     logits = tf.matmul(h, self.decode_lstm_W) + self.decode_lstm_b
                     logits = tf.nn.relu(logits)
+
                     logits = tf.nn.dropout(logits, FLAGS.lstm_dropout_keep_prob)
 
                     logit_words = tf.matmul(logits, self.decode_word_W) + self.decode_word_b
@@ -158,6 +165,7 @@ class ShowAttendTellModel(object):
                 logits_final = tf.transpose(logits_final, perm=[1,0,2])
 
                 logits = tf.reshape(logits_final, [-1, self.n_words])
+
         return {"logits": logits}
 
 
