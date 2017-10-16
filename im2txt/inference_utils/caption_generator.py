@@ -194,7 +194,7 @@ class CaptionGenerator(object):
                                                                   input_feed,
                                                                   state_feed,
                                                                   encoded_image=encoded_image,
-                                                                  use_attention=True)
+                                                                  use_attention=False)
 
         for i, partial_caption in enumerate(partial_captions_list):
           word_probabilities = softmax[i]
