@@ -29,6 +29,7 @@ class ShowAndTellAdvancedModel(object):
 
   def create_model(self, input_seqs, image_model_output, initializer, 
                    mode="train", target_seqs=None, input_mask=None, 
+                   global_step=None,
                    **unused_params):
     
     # Map image model output into embedding space.
@@ -92,9 +93,23 @@ class ShowAndTellAdvancedModel(object):
 
       if mode == "train":
         sequence_length = tf.reduce_sum(input_mask, 1)
-        helper = tf.contrib.seq2seq.TrainingHelper(
-          inputs=seq_embeddings,
-          sequence_length=sequence_length)
+        if FLAGS.use_scheduled_sampling:
+          def inverse_sigmoid_decay_fn(i):
+            k = float(FLAGS.inverse_sigmoid_decay_k)
+            step = tf.cast(tf.maximum(i - FLAGS.scheduled_sampling_starting_step, 0), tf.float32)
+            p = 1.0 - k / (k + tf.exp(step / k))
+            return p
+          
+          sampling_probability = inverse_sigmoid_decay_fn(global_step)
+          helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
+            inputs=seq_embeddings,
+            sequence_length=sequence_length,
+            embedding=embedding_map,
+            sampling_probability=sampling_probability)
+        else:
+          helper = tf.contrib.seq2seq.TrainingHelper(
+            inputs=seq_embeddings,
+            sequence_length=sequence_length)
         decoder = tf.contrib.seq2seq.BasicDecoder(
           cell=lstm_cell,
           helper=helper,
