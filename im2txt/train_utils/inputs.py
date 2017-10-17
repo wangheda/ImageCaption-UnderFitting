@@ -23,7 +23,7 @@ from __future__ import print_function
 import tensorflow as tf
 
 
-def parse_sequence_example(serialized, image_feature, caption_feature):
+def parse_sequence_example(serialized, image_feature, caption_feature, flip_caption_feature=None):
   """Parses a tensorflow.SequenceExample into an image and caption.
 
   Args:
@@ -37,18 +37,34 @@ def parse_sequence_example(serialized, image_feature, caption_feature):
     encoded_image: A scalar string Tensor containing a JPEG encoded image.
     caption: A 1-D uint64 Tensor with dynamically specified length.
   """
-  context, sequence = tf.parse_single_sequence_example(
-      serialized,
-      context_features={
-          image_feature: tf.FixedLenFeature([], dtype=tf.string)
-      },
-      sequence_features={
-          caption_feature: tf.FixedLenSequenceFeature([], dtype=tf.int64),
-      })
+  if not flip_caption_feature:
+    flip_caption = None
+    context, sequence = tf.parse_single_sequence_example(
+        serialized,
+        context_features={
+            image_feature: tf.FixedLenFeature([], dtype=tf.string)
+        },
+        sequence_features={
+            caption_feature: tf.FixedLenSequenceFeature([], dtype=tf.int64),
+        })
 
-  encoded_image = context[image_feature]
-  caption = sequence[caption_feature]
-  return encoded_image, caption
+    encoded_image = context[image_feature]
+    caption = sequence[caption_feature]
+  else:
+    context, sequence = tf.parse_single_sequence_example(
+        serialized,
+        context_features={
+            image_feature: tf.FixedLenFeature([], dtype=tf.string)
+        },
+        sequence_features={
+            caption_feature: tf.FixedLenSequenceFeature([], dtype=tf.int64),
+            flip_caption_feature: tf.FixedLenSequenceFeature([], dtype=tf.int64)
+        })
+    encoded_image = context[image_feature]
+    caption = sequence[caption_feature]
+    flip_caption = sequence[flip_caption_feature]
+
+  return encoded_image, caption, flip_caption
 
 
 def prefetch_input_data(reader,

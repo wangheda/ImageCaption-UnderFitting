@@ -45,6 +45,11 @@ tf.flags.DEFINE_string("train_captions_file", "data/ai_challenger_caption_train_
 tf.flags.DEFINE_string("validate_captions_file", "data/ai_challenger_caption_validation_20170910/caption_validation_annotations_20170910.json",
                        "Validation captions JSON file.")
 
+# use existing word counts file
+tf.flags.DEFINE_string("word_counts_input_file",
+                       "",
+                       "If defined, use existing word_counts_file.")
+
 # output files
 tf.flags.DEFINE_string("output_dir", "data/TFRecord_data", "Output directory for tfrecords.")
 tf.flags.DEFINE_string("word_counts_output_file",
@@ -76,10 +81,58 @@ tf.flags.DEFINE_integer("validate_shards", 4,
 tf.flags.DEFINE_integer("test_shards", 8,
                         "Number of shards in testing TFRecord files.")
 
+tf.flags.DEFINE_boolean("build_flip_caption", False,
+                        "Whether to generate flip caption. If True, only build train set,"
+                        "If set False, build train and dev set")
+
 FLAGS = tf.flags.FLAGS
 
-ImageMetadata = namedtuple("ImageMetadata",
-                           ["id", "filename", "captions"])
+
+if FLAGS.build_flip_caption:
+    ImageMetadata = namedtuple("ImageMetadata",
+                               ["id", "filename", "captions", "flip_captions"])
+else:
+    ImageMetadata = namedtuple("ImageMetadata",
+                               ["id", "filename", "captions"])
+
+
+# functions to flip caption
+def find_all(string, query):
+    # return all positions
+    query_len = len(query)
+    positions = []
+    beg = 0
+    pos = string.find(query, beg)
+    while pos != -1:
+        positions.append(pos)
+        beg = pos + query_len
+        pos = string.find(query, beg)
+    return positions
+
+def func_flip_caption(caption):
+    lr_pos = find_all(caption, u"左右")
+    noflip_pos = []
+    for pos in lr_pos:
+        noflip_pos.append(pos)
+        noflip_pos.append(pos + 1)
+    l_pos = find_all(caption, u"左")
+    l_pos = [pos for pos in l_pos if pos not in noflip_pos]
+
+    r_pos = find_all(caption, u"右")
+    r_pos = [pos for pos in r_pos if pos not in noflip_pos]
+
+    if not l_pos and not r_pos:
+        return caption
+
+    new_caption = ""
+    for i,c in enumerate(caption):
+        if i in l_pos:
+            new_caption += u"右"
+        elif i in r_pos:
+            new_caption += u"左"
+        else:
+            new_caption += c
+    return new_caption
 
 
 class Vocabulary(object):
@@ -100,6 +153,25 @@ class Vocabulary(object):
             return self._vocab[word]
         else:
             return self._unk_id
+
+def load_vocab(vocab_file):
+    if not tf.gfile.Exists(vocab_file):
+      print("Vocab file %s not found.", vocab_file)
+      exit()
+    print("Initializing vocabulary from file: %s", vocab_file)
+
+    with tf.gfile.GFile(vocab_file, mode="r") as f:
+      reverse_vocab = list(f.readlines())
+    reverse_vocab = [line.split()[0].decode('utf-8') for line in reverse_vocab]
+    assert FLAGS.start_word in reverse_vocab
+    assert FLAGS.end_word in reverse_vocab
+    assert FLAGS.unknown_word not in reverse_vocab
+
+    unk_id = len(reverse_vocab)
+    vocab_dict = dict([(x, y) for (y, x) in enumerate(reverse_vocab)])
+    vocab = Vocabulary(vocab_dict, unk_id)
+    return vocab
+
 
 
 class ImageDecoder(object):
@@ -166,10 +238,21 @@ def _to_sequence_example(image, decoder, vocab):
     assert len(image.captions) == 1
     caption = image.captions[0]
     caption_ids = [vocab.word_to_id(word) for word in caption]
-    feature_lists = tf.train.FeatureLists(feature_list={
-        "image/caption": _bytes_feature_list(caption),
-        "image/caption_ids": _int64_feature_list(caption_ids)
-    })
+    if not FLAGS.build_flip_caption:
+        feature_lists = tf.train.FeatureLists(feature_list={
+            "image/caption": _bytes_feature_list(caption),
+            "image/caption_ids": _int64_feature_list(caption_ids)
+        })
+    else:
+        flip_caption = image.flip_captions[0]
+        flip_caption_ids = [vocab.word_to_id(word) for word in flip_caption]
+        feature_lists = tf.train.FeatureLists(feature_list={
+            "image/caption": _bytes_feature_list(caption),
+            "image/caption_ids": _int64_feature_list(caption_ids),
+            "image/flip_caption": _bytes_feature_list(flip_caption),
+            "image/flip_caption_ids": _int64_feature_list(flip_caption_ids)
+        })
+    
     sequence_example = tf.train.SequenceExample(
         context=context, feature_lists=feature_lists)
 
@@ -243,8 +326,12 @@ def _process_dataset(name, images, vocab, num_shards):
       num_shards: Integer number of shards for the output files.
     """
     # Break up each image into a separate entity for each caption.
-    images = [ImageMetadata(image.id, image.filename, [caption])
-              for image in images for caption in image.captions]
+    if FLAGS.build_flip_caption:
+        images = [ImageMetadata(image.id, image.filename, [caption], [flip_caption])
+                  for image in images for (caption,flip_caption) in zip(image.captions, image.flip_captions)]
+    else:
+        images = [ImageMetadata(image.id, image.filename, [caption])
+                  for image in images for caption in image.captions]
 
     # Shuffle the ordering of images. Make the randomization repeatable.
     random.seed(12345)
@@ -344,7 +431,9 @@ def _load_and_process_metadata(captions_file, image_dir):
         if image_name not in image_id:
             id_to_captions.setdefault(image_name, [])
             image_id.add(image_name)
+
         caption_num = len(descriptions)
+
         for i in range(caption_num):
             caption_temp = descriptions[i].strip().strip("。").replace('\n', '')
             if caption_temp != '':
@@ -362,7 +451,11 @@ def _load_and_process_metadata(captions_file, image_dir):
         filename = os.path.join(image_dir, base_filename + '.jpg')
         # captions = [_process_caption(c) for c in id_to_captions[base_filename]]
         captions = [_process_caption_jieba(c) for c in id_to_captions[base_filename]]
-        image_metadata.append(ImageMetadata(id, filename, captions))
+        if FLAGS.build_flip_caption:
+            flip_captions = [_process_caption_jieba(func_flip_caption(c)) for c in id_to_captions[base_filename]]
+            image_metadata.append(ImageMetadata(id, filename, captions, flip_captions))
+        else:
+            image_metadata.append(ImageMetadata(id, filename, captions))
         id = id + 1
         num_captions += len(captions)
     print("Finished processing %d captions for %d images in %s" %
@@ -388,8 +481,9 @@ def main(unused_argv):
     # Load image metadata from caption files.
     train_dataset = _load_and_process_metadata(FLAGS.train_captions_file,
                                                     FLAGS.train_image_dir)
-    validate_dataset = _load_and_process_metadata(FLAGS.validate_captions_file,
-                                                  FLAGS.validate_image_dir)
+    if not FLAGS.build_flip_caption:
+        validate_dataset = _load_and_process_metadata(FLAGS.validate_captions_file,
+                                                      FLAGS.validate_image_dir)
 
     """
     # Redistribute the MSCOCO data as follows:
@@ -405,11 +499,17 @@ def main(unused_argv):
 
 
     # Create vocabulary from the training captions.
-    train_captions = [c for image in train_dataset for c in image.captions]
-    vocab = _create_vocab(train_captions)
+    if FLAGS.word_counts_input_file:
+        vocab = load_vocab(FLAGS.word_counts_input_file)
+    else:
+        train_captions = [c for image in train_dataset for c in image.captions]
+        if FLAGS.build_flip_caption:
+            train_captions.extend([c for image in train_dataset for c in image.flip_captions])
+        vocab = _create_vocab(train_captions)
 
     _process_dataset("train", train_dataset, vocab, FLAGS.train_shards)
-    _process_dataset("val", validate_dataset, vocab, FLAGS.validate_shards)
+    if not FLAGS.build_flip_caption:
+        _process_dataset("val", validate_dataset, vocab, FLAGS.validate_shards)
     # _process_dataset("test", test_dataset, vocab, FLAGS.test_shards)
 
 if __name__ == "__main__":
