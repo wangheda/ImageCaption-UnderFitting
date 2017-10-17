@@ -17,10 +17,16 @@ tf.flags.DEFINE_integer("max_caption_length", 20,
 # flags for advanced model
 tf.flags.DEFINE_boolean("use_scheduled_sampling", True,
                         "Whether to use scheduled sampling during training.")
+tf.flags.DEFINE_boolean("use_attention_wrapper", False,
+                        "Whether to use scheduled sampling during training.")
 tf.flags.DEFINE_float("inverse_sigmoid_decay_k", 21000,
                         "The k in inverse_sigmoid_decay method. This setting will half sampling rate at about 210000 steps.")
 tf.flags.DEFINE_integer("scheduled_sampling_starting_step", 0,
                         "Set this up properly in finetuning.")
+tf.flags.DEFINE_integer("num_lstm_layers", 1,
+                        "The num of layers in lstm model")
+tf.flags.DEFINE_string("attention_mechanism", "LuongAttention",
+                        "The attention mechanism used in attention wrapper.")
 
 
 # models

@@ -73,6 +73,8 @@ tf.flags.DEFINE_boolean("support_flip", False,
                         "the SequenceExample should contains feature key 'image/flip_caption_ids'")
 tf.flags.DEFINE_boolean("use_box", False,
                         "Whether to remain position information in inception v3 output feature matrix")
+tf.flags.DEFINE_boolean("inception_return_tuple", False,
+                        "Whether to remain position information in inception v3 output feature matrix, alongside with the origin pooled feature.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -256,7 +258,8 @@ class Im2TxtModel(object):
         self.images,
         trainable=trainable,
         is_training=self.is_training(),
-        use_box=FLAGS.use_box)
+        use_box=FLAGS.use_box,
+        inception_return_tuple=FLAGS.inception_return_tuple)
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
 

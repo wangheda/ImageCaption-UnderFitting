@@ -31,6 +31,11 @@ class ShowAndTellAdvancedModel(object):
                    mode="train", target_seqs=None, input_mask=None, 
                    global_step=None,
                    **unused_params):
+
+    if FLAGS.inception_return_tuple:
+      image_model_output, middle_layer = image_model_output
+      print image_model_output
+      print middle_layer
     
     # Map image model output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
@@ -67,8 +72,22 @@ class ShowAndTellAdvancedModel(object):
     # This LSTM cell has biases and outputs tanh(new_c) * sigmoid(o), but the
     # modified LSTM in the "Show and Tell" paper has no biases and outputs
     # new_c * sigmoid(o).
-    lstm_cell = tf.contrib.rnn.BasicLSTMCell(
-        num_units=FLAGS.num_lstm_units, state_is_tuple=True)
+    if FLAGS.num_lstm_layers > 1:
+      lstm_cell = tf.contrib.rnn.MultiRNNCell([
+                          tf.contrib.rnn.BasicLSTMCell(
+                              num_units=FLAGS.num_lstm_units, state_is_tuple=True)
+                      for i in xrange(FLAGS.num_lstm_layers)], state_is_tuple=True)
+    else:
+      lstm_cell = tf.contrib.rnn.BasicLSTMCell(
+                      num_units=FLAGS.num_lstm_units, state_is_tuple=True)
+
+    if FLAGS.use_attention_wrapper:
+      lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
+          lstm_cell,
+          getattr(tf.contrib.seq2seq, FLAGS.attention_mechanism)(
+              num_units = FLAGS.num_lstm_units,
+              memory = middle_layer,
+          ))
 
     if mode == "train":
       lstm_cell = tf.contrib.rnn.DropoutWrapper(
