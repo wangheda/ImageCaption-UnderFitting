@@ -8,9 +8,9 @@ TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 
 model=ShowAndTellAdvancedModel
-model_dir_name=show_and_tell_advanced_model_ss_att_2_finetune_with_decay
-original_model_dir_name=show_and_tell_advanced_model_ss_att_2
-start_ckpt=420000
+model_dir_name=show_and_tell_advanced_model_attention_finetune_with_decay
+original_model_dir_name=show_and_tell_advanced_model_attention
+start_ckpt=105000
 
 # copy the starting checkpoint
 if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
@@ -25,11 +25,11 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
   --initial_learning_rate=1.0 \
-  --learning_rate_decay_factor=0.66 \
-  --train_inception_with_decay=True \
+  --learning_rate_decay_factor=0.6 \
   --inception_return_tuple=True \
   --use_attention_wrapper=True \
   --attention_mechanism=BahdanauAttention \
   --num_lstm_layers=1 \
   --support_ingraph=True \
-  --number_of_steps=560000
+  --train_inception_with_decay=True \
+  --number_of_steps=600000

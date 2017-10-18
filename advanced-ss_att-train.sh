@@ -8,7 +8,7 @@ TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 model=ShowAndTellAdvancedModel
 
-model_dir_name=show_and_tell_advanced_model_ss_att_2
+model_dir_name=show_and_tell_advanced_model_attention
 
 cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
@@ -16,7 +16,7 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
   --initial_learning_rate=1.0 \
-  --learning_rate_decay_factor=0.66 \
+  --learning_rate_decay_factor=0.6 \
   --inception_return_tuple=True \
   --use_attention_wrapper=True \
   --attention_mechanism=BahdanauAttention \

@@ -15,5 +15,7 @@ cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
+  --initial_learning_rate=1.0 \
+  --learning_rate_decay_factor=0.6 \
   --support_ingraph=True \
   --number_of_steps=105000
