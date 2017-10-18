@@ -1,11 +1,11 @@
 #!/bin/bash
 
-model_name="show_and_tell_in_graph_model_finetune"
+model_name="show_and_tell_in_graph_model_finetune_with_decay"
 model="ShowAndTellInGraphModel"
 ckpt=840000
 num_processes=2
-gpu_fraction=0.4
-device=1
+gpu_fraction=0.46
+device=0
 
 # the script directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
