@@ -8,9 +8,9 @@ TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 
 model=ShowAndTellInGraphModel
-model_dir_name=show_and_tell_in_graph_model_finetune_with_decay
-original_model_dir_name=show_and_tell_in_graph_model
-start_ckpt=420000
+model_dir_name=show_and_tell_in_graph_model_2_finetune_with_decay
+original_model_dir_name=show_and_tell_in_graph_model_2
+start_ckpt=105000
 
 # copy the starting checkpoint
 if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
@@ -19,11 +19,11 @@ if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
   echo "model_checkpoint_path: \"${MODEL_DIR}/${model_dir_name}/model.ckpt-${start_ckpt}\"" > ${MODEL_DIR}/${model_dir_name}/checkpoint
 fi
 
-cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
+cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
   --train_inception_with_decay=True \
   --support_ingraph=True \
-  --number_of_steps=840000
+  --number_of_steps=560000

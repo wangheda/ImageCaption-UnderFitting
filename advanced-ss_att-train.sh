@@ -8,7 +8,7 @@ TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 model=ShowAndTellAdvancedModel
 
-model_dir_name=show_and_tell_advanced_model_ss_att
+model_dir_name=show_and_tell_advanced_model_ss_att_2
 
 cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
@@ -21,8 +21,5 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --use_attention_wrapper=True \
   --attention_mechanism=BahdanauAttention \
   --num_lstm_layers=1 \
-  --use_scheduled_sampling=True \
-  --inverse_sigmoid_decay_k=12000 \
-  --scheduled_sampling_starting_step=0 \
   --support_ingraph=True \
-  --number_of_steps=210000
+  --number_of_steps=105000

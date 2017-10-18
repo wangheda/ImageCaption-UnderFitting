@@ -2,10 +2,10 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_in_graph_model_finetune_with_decay"
-num_processes=2
-gpu_fraction=0.45
-device=0
+model_name="show_and_tell_in_graph_model_2_finetune_with_decay"
+num_processes=1
+gpu_fraction=0.9
+device=1
 model=ShowAndTellInGraphModel
 
 MODEL_DIR="${DIR}/model/${model_name}"

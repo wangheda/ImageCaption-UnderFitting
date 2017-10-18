@@ -25,7 +25,11 @@ tf.flags.DEFINE_integer("scheduled_sampling_starting_step", 0,
                         "Set this up properly in finetuning.")
 tf.flags.DEFINE_integer("num_lstm_layers", 1,
                         "The num of layers in lstm model")
-tf.flags.DEFINE_string("attention_mechanism", "LuongAttention",
+tf.flags.DEFINE_integer("num_attention_depth", 128,
+                        "The num of atttention depth")
+tf.flags.DEFINE_string("attention_mechanism", "BahdanauAttention",
+                        "The attention mechanism used in attention wrapper.")
+tf.flags.DEFINE_boolean("output_attention", False,
                         "The attention mechanism used in attention wrapper.")
 
 

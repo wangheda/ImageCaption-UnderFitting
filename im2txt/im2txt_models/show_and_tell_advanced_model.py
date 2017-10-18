@@ -81,19 +81,27 @@ class ShowAndTellAdvancedModel(object):
       lstm_cell = tf.contrib.rnn.BasicLSTMCell(
                       num_units=FLAGS.num_lstm_units, state_is_tuple=True)
 
-    if FLAGS.use_attention_wrapper:
-      lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
-          lstm_cell,
-          getattr(tf.contrib.seq2seq, FLAGS.attention_mechanism)(
-              num_units = FLAGS.num_lstm_units,
-              memory = middle_layer,
-          ))
-
     if mode == "train":
       lstm_cell = tf.contrib.rnn.DropoutWrapper(
           lstm_cell,
           input_keep_prob=FLAGS.lstm_dropout_keep_prob,
           output_keep_prob=FLAGS.lstm_dropout_keep_prob)
+
+    if FLAGS.use_attention_wrapper:
+      attention_mechanism = getattr(tf.contrib.seq2seq, 
+          FLAGS.attention_mechanism)(
+              num_units = FLAGS.num_attention_depth,
+              memory = middle_layer)
+
+      print attention_mechanism.alignments_size
+      print attention_mechanism.keys
+      print attention_mechanism.values
+
+      lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
+          lstm_cell,
+          attention_mechanism,
+          attention_layer_size=FLAGS.num_attention_depth,
+          output_attention=FLAGS.output_attention)
 
     #output_layer = Dense(units=FLAGS.vocab_size,
     #                     name="output_layer")
