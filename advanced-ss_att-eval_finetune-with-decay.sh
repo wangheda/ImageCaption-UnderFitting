@@ -2,11 +2,11 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_in_graph_model_2_finetune_with_decay"
+model_name="show_and_tell_advanced_model_attention_finetune_with_decay"
 num_processes=1
-gpu_fraction=0.9
-device=1
-model=ShowAndTellInGraphModel
+gpu_fraction=0.97
+device=0
+model=ShowAndTellAdvancedModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
 for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do 
@@ -29,6 +29,10 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --vocab_file=${DIR}/data/word_counts.txt \
         --output=${OUTPUT_DIR}/part-${prefix}.json \
         --model=${model} \
+        --inception_return_tuple=True \
+        --use_attention_wrapper=True \
+        --attention_mechanism=BahdanauAttention \
+        --num_lstm_layers=1 \
         --support_ingraph=True \
         --gpu_memory_fraction=$gpu_fraction"
     fi
