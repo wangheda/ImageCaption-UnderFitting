@@ -7,7 +7,7 @@ num_processes=3
 gpu_fraction=0.28
 device=1
 
-for ckpt in 540807 553187 565648 578097 590518 602943 615359 627785 640200 652401 664790 677090 689385 701708 714038 726361 738682 750979 763316 775604 787905 800207 812505 824820 837155; do 
+for ckpt in 540807 553187 565648 578097 590518 602943 615359 627785 639372; do 
   # the script directory
   MODEL_DIR="${DIR}/model/${model_name}"
   VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"

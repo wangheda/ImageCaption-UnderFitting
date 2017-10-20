@@ -192,7 +192,9 @@ class CaptionGenerator(object):
 
         softmax, new_states, metadata = self.model.inference_step(sess,
                                                                   input_feed,
-                                                                  state_feed)
+                                                                  state_feed,
+                                                                  encoded_image=encoded_image,
+                                                                  use_attention=False)
 
         for i, partial_caption in enumerate(partial_captions_list):
           word_probabilities = softmax[i]

@@ -37,4 +37,4 @@ tf.flags.DEFINE_boolean("output_attention", False,
 from show_and_tell_model import ShowAndTellModel
 from show_and_tell_in_graph_model import ShowAndTellInGraphModel
 from show_and_tell_advanced_model import ShowAndTellAdvancedModel
-
+from show_attend_tell_model import ShowAttendTellModel
