@@ -73,6 +73,9 @@ tf.flags.DEFINE_boolean("support_flip", False,
                         "the SequenceExample should contains feature key 'image/flip_caption_ids'")
 tf.flags.DEFINE_boolean("use_box", False,
                         "Whether to remain position information in inception v3 output feature matrix")
+tf.flags.DEFINE_boolean("use_semantic", False,
+                        "Whether to use Semantic Image Caption model,"
+                        "If true, the model will generate multi-label targets based on multi_label_mask.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -116,6 +119,9 @@ class Im2TxtModel(object):
     # An int32 0/1 Tensor with shape [batch_size, padded_length].
     self.input_mask = None
 
+    # # An int32 0/1 Tensor with shape [mask_length].
+    self.multi_label_mask = None
+
     # A float32 Tensor with shape [batch_size, image_model_dim].
     self.image_model_output= None
 
@@ -139,6 +145,8 @@ class Im2TxtModel(object):
 
     # In-graph inference support
     self.support_ingraph = FLAGS.support_ingraph
+
+    self.use_semantic = FLAGS.use_semantic
 
   def is_training(self):
     """Returns true if the model is built for training mode."""
@@ -172,6 +180,8 @@ class Im2TxtModel(object):
       self.target_seqs (training and eval only)
       self.input_mask (training and eval only)
     """
+    multi_label_targets = None
+
     if self.mode == "inference":
       # In inference mode, images and inputs are fed via placeholders.
       image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
@@ -228,15 +238,25 @@ class Im2TxtModel(object):
       # Batch inputs.
       queue_capacity = (2 * FLAGS.num_preprocess_threads *
                         FLAGS.batch_size)
-      images, input_seqs, target_seqs, input_mask = (
-          input_ops.batch_with_dynamic_pad(images_and_captions,
-                                           batch_size=FLAGS.batch_size,
-                                           queue_capacity=queue_capacity))
+
+      if self.use_semantic:
+        assert self.multi_label_mask != None
+        images, input_seqs, target_seqs, input_mask, multi_label_targets = (
+            input_ops.batch_with_dynamic_pad(images_and_captions,
+                                             batch_size=FLAGS.batch_size,
+                                             queue_capacity=queue_capacity,
+                                             multi_label_mask=self.multi_label_mask))
+      else:
+        images, input_seqs, target_seqs, input_mask = (
+            input_ops.batch_with_dynamic_pad(images_and_captions,
+                                             batch_size=FLAGS.batch_size,
+                                             queue_capacity=queue_capacity))
 
     self.images = images
     self.input_seqs = input_seqs
     self.target_seqs = target_seqs
     self.input_mask = input_mask
+    self.multi_label_targets = multi_label_targets
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
@@ -275,18 +295,32 @@ class Im2TxtModel(object):
       self.target_cross_entropy_losses (training and eval only)
       self.target_cross_entropy_loss_weights (training and eval only)
     """
-
-    caption_model_fn = find_class_by_name(FLAGS.model, [im2txt_models])
+    if self.use_semantic:
+      # Will use SemanticAttentionModel
+      caption_model_fn = find_class_by_name("SemanticAttentionModel", [im2txt_models])
+    else:
+      caption_model_fn = find_class_by_name(FLAGS.model, [im2txt_models])
     caption_model = caption_model_fn()
 
     # model
-    outputs = caption_model.create_model(
-          input_seqs = self.input_seqs, 
-          image_model_output = self.image_model_output,
-          initializer = self.initializer,
-          mode = self.mode,
-          target_seqs = self.target_seqs,
-          input_mask = self.input_mask)
+    if self.use_semantic:
+      outputs = caption_model.create_model(
+            input_seqs = self.input_seqs, 
+            image_model_output = self.image_model_output,
+            initializer = self.initializer,
+            mode = self.mode,
+            target_seqs = self.target_seqs,
+            input_mask = self.input_mask,
+            multi_label_mask = self.multi_label_mask)
+
+    else:
+      outputs = caption_model.create_model(
+            input_seqs = self.input_seqs, 
+            image_model_output = self.image_model_output,
+            initializer = self.initializer,
+            mode = self.mode,
+            target_seqs = self.target_seqs,
+            input_mask = self.input_mask)
 
     # loss
     if self.mode == "inference":
@@ -299,6 +333,19 @@ class Im2TxtModel(object):
       logits = outputs["logits"]
       targets = tf.reshape(self.target_seqs, [-1])
       weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+
+      if FLAGS.use_semantic:
+        multi_label_logits = outputs["multi_label_logits"]
+        multi_label_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+          labels=self.multi_label_targets,
+          logits=multi_label_logits)
+
+        multi_label_loss = tf.div(tf.reduce_sum(tf.multiply(multi_label_loss, self.multi_label_mask)),
+                                  tf.reduce_sum(self.multi_label_mask),
+                                  name="multi_label_loss")
+
+        tf.summary.scalar("losses/aux_loss", multi_label_loss)
+        self.aux_loss = multi_label_loss
 
       # Compute losses.
       losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
@@ -349,3 +396,25 @@ class Im2TxtModel(object):
     self.build_model()
     self.setup_inception_initializer()
     self.setup_global_step()
+
+  def set_multi_label_mask(self, vocab_file, concepts_file, concepts_num=1000):
+    input = open(vocab_file)
+    vocab = [line.split(" ")[0] for line in input.readlines()]
+    input.close()
+    input = open(concepts_file)
+    concepts = set([line.split(" ")[0] for line in input.readlines()])
+    input.close()
+    index = 0
+    mask = []
+    for word in vocab:
+      if word in concepts:
+        mask.append(1.0)
+        index += 1
+        if index == concepts_num:
+          break
+      else:
+        mask.append(0)
+
+    self.multi_label_mask = tf.Variable(mask,
+                                        trainable=False,
+                                        name="multi_label_mask")

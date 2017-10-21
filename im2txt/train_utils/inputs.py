@@ -142,7 +142,8 @@ def prefetch_input_data(reader,
 def batch_with_dynamic_pad(images_and_captions,
                            batch_size,
                            queue_capacity,
-                           add_summaries=True):
+                           add_summaries=True,
+                           multi_label_mask=None):
   """Batches input images and captions.
 
   This function splits the caption into an input sequence and a target sequence,
@@ -202,9 +203,13 @@ def batch_with_dynamic_pad(images_and_captions,
     input_seq = tf.slice(caption, [0], input_length)
     target_seq = tf.slice(caption, [1], input_length)
     indicator = tf.ones(input_length, dtype=tf.int32)
-    enqueue_list.append([image, input_seq, target_seq, indicator])
+    if multi_label_mask:
+      multi_label_target = get_multi_label_target(caption, multi_label_mask)
+    else:
+      multi_label_target = None
+    enqueue_list.append([image, input_seq, target_seq, indicator, multi_label_target])
 
-  images, input_seqs, target_seqs, mask = tf.train.batch_join(
+  images, input_seqs, target_seqs, mask, multi_label_targets = tf.train.batch_join(
       enqueue_list,
       batch_size=batch_size,
       capacity=queue_capacity,
@@ -217,4 +222,12 @@ def batch_with_dynamic_pad(images_and_captions,
     tf.summary.scalar("caption_length/batch_max", tf.reduce_max(lengths))
     tf.summary.scalar("caption_length/batch_mean", tf.reduce_mean(lengths))
 
-  return images, input_seqs, target_seqs, mask
+  if multi_label_mask:
+    return images, input_seqs, target_seqs, mask, multi_label_targets
+  else:
+    return images, input_seqs, target_seqs, mask
+
+def get_multi_label_target(caption, multi_label_mask):
+  unique_ids, _ = tf.unique(caption)
+  return multi_label_mask * tf.reduce_sum(tf.one_hot(unique_ids, tf.shape(multi_label_mask)[0]), axis=0)
+

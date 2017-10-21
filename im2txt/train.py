@@ -67,6 +67,15 @@ tf.flags.DEFINE_string("exclude_variable_patterns", None,
                        "Filter (by comma separated regular expressions) variables that will not be"
                        " loaded from and saved to checkpoints.")
 
+# semantic attention config
+tf.flags.DEFINE_boolean("use_aux_loss", False,
+                        "Train with aux_loss or not.")
+tf.flags.DEFINE_string("vocab_file", "",
+                       "Text file containing the vocabulary.")
+tf.flags.DEFINE_string("concepts_file", "",
+                       "Text file containing the concept words.")
+
+
 import im2txt_model
 
 tf.logging.set_verbosity(tf.logging.INFO)
@@ -87,7 +96,10 @@ def main(unused_argv):
   with g.as_default():
     # Build the model.
     model = im2txt_model.Im2TxtModel(mode="train")
+    if FLAGS.use_semantic:
+      model.set_multi_label_mask(FLAGS.vocab_file, FLAGS.concepts_file)
     model.build()
+
 
     # Set up the learning rate.
     learning_rate_decay_fn = None
@@ -112,8 +124,12 @@ def main(unused_argv):
         learning_rate_decay_fn = _learning_rate_decay_fn
 
     # Set up the training ops.
+    if FLAGS.use_aux_loss:
+      loss = model.aux_loss
+    else:
+      loss = model.total_loss
     train_op = tf.contrib.layers.optimize_loss(
-        loss=model.total_loss,
+        loss=loss,
         global_step=model.global_step,
         learning_rate=learning_rate,
         optimizer=FLAGS.optimizer,
