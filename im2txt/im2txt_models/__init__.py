@@ -22,16 +22,18 @@ tf.flags.DEFINE_string("scheduled_sampling_method", "inverse_sigmoid",
 tf.flags.DEFINE_float("inverse_sigmoid_decay_k", 21000,
                         "The k in inverse_sigmoid_decay method. This setting will half sampling rate at about 210000 steps.")
 tf.flags.DEFINE_integer("scheduled_sampling_starting_step", 0,
-                        "Set this up properly in finetuning.")
+                        "The starting step in finetuning. Step smaller than this value will "
+                        "be set to it in sampling rate computation.")
 tf.flags.DEFINE_integer("scheduled_sampling_ending_step", 1000000,
-                        "Set this up properly in finetuning.")
+                        "The ending step in finetuning. Step larger than this value will "
+                        "be set to it in sampling rate computation.")
 tf.flags.DEFINE_float("scheduled_sampling_starting_rate", 0.0,
-                        "Set this up properly in finetuning.")
+                        "The starting sampling rate in finetuning.")
 tf.flags.DEFINE_float("scheduled_sampling_ending_rate", 0.5,
-                        "Set this up properly in finetuning.")
+                        "The ending sampling rate in finetuning.")
 
 tf.flags.DEFINE_boolean("use_attention_wrapper", False,
-                        "Whether to use scheduled sampling during training.")
+                        "Whether to use attention wrapper during training.")
 tf.flags.DEFINE_integer("num_lstm_layers", 1,
                         "The num of layers in lstm model")
 tf.flags.DEFINE_integer("num_attention_depth", 128,
@@ -39,7 +41,8 @@ tf.flags.DEFINE_integer("num_attention_depth", 128,
 tf.flags.DEFINE_string("attention_mechanism", "BahdanauAttention",
                         "The attention mechanism used in attention wrapper.")
 tf.flags.DEFINE_boolean("output_attention", False,
-                        "The attention mechanism used in attention wrapper.")
+                        "If the attention mechanism used in attention wrapper is Bahdanau, "
+                        "this value should be false. If the mechanism is Lung, this value should be set true.")
 
 
 # models
