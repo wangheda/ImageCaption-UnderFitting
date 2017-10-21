@@ -8,9 +8,9 @@ TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 
 model=ShowAndTellAdvancedModel
-model_dir_name=show_and_tell_advanced_model_scheduled_sampling_finetune
-original_model_dir_name=show_and_tell_advanced_model_scheduled_sampling
-start_ckpt=210000
+model_dir_name=show_and_tell_advanced_model_ss_finetune_with_decay
+original_model_dir_name=show_and_tell_advanced_model_ss
+start_ckpt=105000
 
 # copy the starting checkpoint
 if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
@@ -24,10 +24,14 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
-  --train_inception=True \
-  --train_inception_learning_rate=0.001 \
-  --use_scheduled_sampling=True \
-  --inverse_sigmoid_decay_k=21000 \
-  --scheduled_sampling_starting_step=210000 \
+  --initial_learning_rate=1.0 \
+  --learning_rate_decay_factor=0.6 \
+  --train_inception_with_decay=True \
   --support_ingraph=True \
-  --number_of_steps=630000
+  --use_scheduled_sampling=True \
+  --scheduled_sampling_method="linear" \
+  --scheduled_sampling_starting_rate=0.0 \
+  --scheduled_sampling_ending_rate=0.5 \
+  --scheduled_sampling_starting_step=105000 \
+  --scheduled_sampling_ending_step=600000 \
+  --number_of_steps=600000

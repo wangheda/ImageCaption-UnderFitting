@@ -121,13 +121,34 @@ class ShowAndTellAdvancedModel(object):
       if mode == "train":
         sequence_length = tf.reduce_sum(input_mask, 1)
         if FLAGS.use_scheduled_sampling:
-          def inverse_sigmoid_decay_fn(i):
+          def get_processed_step(step):
+            step = tf.maximum(step, FLAGS.scheduled_sampling_starting_step)
+            step = tf.minimum(step, FLAGS.scheduled_sampling_ending_step)
+            step = tf.maximum(step - FLAGS.scheduled_sampling_starting_step, 0)
+            step = tf.cast(step, tf.float32)
+            return step
+            
+          def inverse_sigmoid_decay_fn(step):
+            step = get_processed_step(step)
             k = float(FLAGS.inverse_sigmoid_decay_k)
-            step = tf.cast(tf.maximum(i - FLAGS.scheduled_sampling_starting_step, 0), tf.float32)
             p = 1.0 - k / (k + tf.exp(step / k))
             return p
           
-          sampling_probability = inverse_sigmoid_decay_fn(global_step)
+          def linear_decay_fn(step):
+            step = get_processed_step(step)
+            slope = (FLAGS.scheduled_sampling_ending_rate - FLAGS.scheduled_sampling_starting_rate) / (FLAGS.scheduled_sampling_ending_step - FLAGS.scheduled_sampling_starting_step)
+            a = FLAGS.scheduled_sampling_starting_rate
+            p = a + slope * step
+            return p
+
+          sampling_fn = {
+              "linear": linear_decay_fn, 
+              "inverse_sigmoid": inverse_sigmoid_decay_fn
+          }
+
+          sampling_probability = sampling_fn[FLAGS.scheduled_sampling_method](global_step)
+          tf.summary.scalar("scheduled_sampling/prob", sampling_probability)
+
           helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
             inputs=seq_embeddings,
             sequence_length=sequence_length,
