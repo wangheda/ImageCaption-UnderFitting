@@ -183,7 +183,6 @@ class ShowAndTellAdvancedModel(object):
           start_tokens=tf.fill([batch_size], FLAGS.start_token),    #[batch_size]
           end_token=FLAGS.end_token,
           initial_state=initial_state,
-          #initial_state=tf.contrib.seq2seq.tile_batch(initial_state, multiplier=FLAGS.beam_width), #[batch_size*beam_width]
           beam_width=FLAGS.beam_width,
           output_layer=output_layer,
           length_penalty_weight=0.0)
