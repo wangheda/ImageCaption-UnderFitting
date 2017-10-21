@@ -18,4 +18,4 @@ tf.flags.DEFINE_integer("max_caption_length", 20,
 # models
 from show_and_tell_model import ShowAndTellModel
 from show_and_tell_in_graph_model import ShowAndTellInGraphModel
-
+from show_attend_tell_model import ShowAttendTellModel
