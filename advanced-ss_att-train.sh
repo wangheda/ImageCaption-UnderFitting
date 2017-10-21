@@ -18,6 +18,7 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --initial_learning_rate=1.0 \
   --learning_rate_decay_factor=0.6 \
   --inception_return_tuple=True \
+  --use_scheduled_sampling=False \
   --use_attention_wrapper=True \
   --attention_mechanism=BahdanauAttention \
   --num_lstm_layers=1 \

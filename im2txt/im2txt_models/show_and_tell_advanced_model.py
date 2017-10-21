@@ -88,6 +88,10 @@ class ShowAndTellAdvancedModel(object):
           output_keep_prob=FLAGS.lstm_dropout_keep_prob)
 
     if FLAGS.use_attention_wrapper:
+      # If mode is inference, copy the middle layer many times
+      if mode == "inference":
+        middle_layer = tf.contrib.seq2seq.tile_batch(middle_layer, multiplier=FLAGS.beam_width)
+
       attention_mechanism = getattr(tf.contrib.seq2seq, 
           FLAGS.attention_mechanism)(
               num_units = FLAGS.num_attention_depth,
@@ -110,8 +114,15 @@ class ShowAndTellAdvancedModel(object):
       # Feed the image embeddings to set the initial LSTM state.
       batch_size = get_shape(image_embeddings)[0]
 
-      zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
-      _, initial_state = lstm_cell(image_embeddings, zero_state)
+      if mode == "train":
+        zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
+        _, initial_state = lstm_cell(image_embeddings, zero_state)
+      elif mode == "inference":
+        image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings, multiplier=FLAGS.beam_width)
+        zero_state = lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
+        _, initial_state = lstm_cell(image_embeddings, zero_state)
+      else:
+        raise Exception("Unknown mode!")
 
       output_layer = Dense(units=FLAGS.vocab_size,
                            name="output_layer")
@@ -171,7 +182,8 @@ class ShowAndTellAdvancedModel(object):
           embedding=embedding_map,
           start_tokens=tf.fill([batch_size], FLAGS.start_token),    #[batch_size]
           end_token=FLAGS.end_token,
-          initial_state=tf.contrib.seq2seq.tile_batch(initial_state, multiplier=FLAGS.beam_width), #[batch_size*beam_width]
+          initial_state=initial_state,
+          #initial_state=tf.contrib.seq2seq.tile_batch(initial_state, multiplier=FLAGS.beam_width), #[batch_size*beam_width]
           beam_width=FLAGS.beam_width,
           output_layer=output_layer,
           length_penalty_weight=0.0)
