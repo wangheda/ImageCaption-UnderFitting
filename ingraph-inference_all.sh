@@ -5,7 +5,7 @@ model="ShowAndTellInGraphModel"
 ckpt=840000
 num_processes=1
 gpu_fraction=0.98
-device=0
+device=1
 
 # the script directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -29,14 +29,13 @@ for mode in TRAIN VALIDATE TEST; do
 
   for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do 
     sleep 2s
-    CUDA_VISIBLE_DEVICES=$device python inference.py \
+    CUDA_VISIBLE_DEVICES=$device python inference_all.py \
       --input_file_pattern="${IMAGE_DIR}/${prefix}*.jpg" \
       --checkpoint_path=${CHECKPOINT_PATH} \
       --vocab_file=${DIR}/data/word_counts.txt \
       --output=${OUTPUT_DIR}/part-${prefix}.json \
       --model=${model} \
-      --support_ingraph=True \
-      --gpu_memory_fraction=$gpu_fraction
+      --support_ingraph=True
   done 
 done
 

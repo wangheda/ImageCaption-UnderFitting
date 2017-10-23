@@ -4,7 +4,7 @@ model_name="show_and_tell_advanced_model_attention_finetune_with_decay"
 model="ShowAndTellAdvancedModel"
 ckpt=341571
 num_processes=1
-gpu_fraction=0.98
+gpu_fraction=1.0
 device=0
 
 # the script directory
@@ -29,7 +29,7 @@ for mode in TRAIN VALIDATE TEST; do
 
   for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do 
     sleep 2s
-    CUDA_VISIBLE_DEVICES=$device python inference.py \
+    CUDA_VISIBLE_DEVICES=$device python inference_all.py \
       --input_file_pattern="${IMAGE_DIR}/${prefix}*.jpg" \
       --checkpoint_path=${CHECKPOINT_PATH} \
       --vocab_file=${DIR}/data/word_counts.txt \
@@ -39,8 +39,7 @@ for mode in TRAIN VALIDATE TEST; do
       --use_attention_wrapper=True \
       --attention_mechanism=BahdanauAttention \
       --num_lstm_layers=1 \
-      --support_ingraph=True \
-      --gpu_memory_fraction=$gpu_fraction
+      --support_ingraph=True
   done 
 done
 
