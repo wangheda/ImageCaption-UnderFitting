@@ -9,7 +9,7 @@ MODEL_DIR="${DIR}/model"
 
 model=SemanticAttentionModel
 model_dir_name=semantic_attention_model_join
-original_model_dir_name=semantic_attention_model_aux
+original_model_dir_name=semantic_attention_model_attr_only
 start_ckpt=114135
 
 # copy the starting checkpoint
@@ -28,5 +28,5 @@ cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
   --number_of_steps=520000 \
   --use_semantic=True \
   --vocab_file="${DIR}/data/word_counts.txt" \
-  --concepts_file="${DIR}/data/concepts.txt"
+  --attributes_file="${DIR}/data/attributes.txt"
 

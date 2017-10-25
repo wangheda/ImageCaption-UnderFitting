@@ -68,11 +68,11 @@ tf.flags.DEFINE_string("exclude_variable_patterns", None,
                        " loaded from and saved to checkpoints.")
 
 # semantic attention config
-tf.flags.DEFINE_boolean("use_aux_loss", False,
-                        "Train with aux_loss or not.")
+tf.flags.DEFINE_boolean("only_attributes_loss", False,
+                        "Train only use aux_loss or not.")
 tf.flags.DEFINE_string("vocab_file", "",
                        "Text file containing the vocabulary.")
-tf.flags.DEFINE_string("concepts_file", "",
+tf.flags.DEFINE_string("attributes_file", "",
                        "Text file containing the concept words.")
 
 
@@ -122,8 +122,8 @@ def main(unused_argv):
         learning_rate_decay_fn = _learning_rate_decay_fn
 
     # Set up the training ops.
-    if FLAGS.use_aux_loss:
-      loss = model.aux_loss
+    if FLAGS.only_attributes_loss:
+      loss = model.attributes_loss
     else:
       loss = model.total_loss
     train_op = tf.contrib.layers.optimize_loss(

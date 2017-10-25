@@ -29,7 +29,7 @@ class SemanticAttentionModel(object):
                    mode="train", target_seqs=None, input_mask=None,
                    **unused_params):
     
-    multi_label_mask = self.build_multi_label_mask()
+    attributes_mask = self.build_attributes_mask()
 
     # Map image model output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
@@ -47,10 +47,10 @@ class SemanticAttentionModel(object):
     self.image_embeddings = image_embeddings
 
     # Generate multi-label logits.
-    with tf.variable_scope("multi_label_logits") as scope:
-      multi_label_logits = tf.contrib.layers.fully_connected(
+    with tf.variable_scope("attributes_logits") as scope:
+      attributes_logits = tf.contrib.layers.fully_connected(
           inputs=image_embeddings,
-          num_outputs=get_shape(multi_label_mask)[0],
+          num_outputs=get_shape(attributes_mask)[0],
           activation_fn=None,
           weights_initializer=initializer,
           biases_initializer=None,
@@ -79,9 +79,9 @@ class SemanticAttentionModel(object):
     # new_c * sigmoid(o).
 
     # add semantic attention here!!!
-    multi_label_probs = tf.sigmoid(multi_label_logits) * multi_label_mask
-    _, top_concepts_indices = tf.nn.top_k(multi_label_probs, FLAGS.concepts_top_k)
-    attention_memory = tf.nn.embedding_lookup(embedding_map, top_concepts_indices)
+    attributes_probs = tf.sigmoid(attributes_logits) * attributes_mask
+    _, top_attributes_indices = tf.nn.top_k(attributes_probs, FLAGS.attributes_top_k)
+    attention_memory = tf.nn.embedding_lookup(embedding_map, top_attributes_indices)
     if mode == "inference":
       attention_memory = tf.contrib.seq2seq.tile_batch(attention_memory, multiplier=FLAGS.beam_width)
 
@@ -166,31 +166,31 @@ class SemanticAttentionModel(object):
     if mode == "train":
       logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
       return {"logits": logits, 
-              "multi_label_logits": multi_label_logits, 
-              "multi_label_mask": multi_label_mask}
+              "attributes_logits": attributes_logits, 
+              "attributes_mask": attributes_mask}
     else:
-      return {"bs_results": outputs, "top_n_concepts": top_concepts_indices}
+      return {"bs_results": outputs, "top_n_attributes": top_attributes_indices}
 
-  def build_multi_label_mask(self, concepts_num=1000):
+  def build_attributes_mask(self, attributes_num=1000):
     input = open(FLAGS.vocab_file)
     vocab = [line.split(" ")[0] for line in input.readlines()]
     input.close()
-    input = open(FLAGS.concepts_file)
-    concepts = set([line.split(" ")[0] for line in input.readlines()])
+    input = open(FLAGS.attributes_file)
+    attributes = set([line.split(" ")[0] for line in input.readlines()])
     input.close()
     index = 0
     mask = []
     for word in vocab:
-      if word in concepts:
+      if word in attributes:
         mask.append(1.0)
         index += 1
-        if index == concepts_num:
+        if index == attributes_num:
           break
       else:
         mask.append(0)
 
-    multi_label_mask = tf.Variable(mask,
+    attributes_mask = tf.Variable(mask,
                                    trainable=False,
-                                   name="multi_label_mask")
-    return multi_label_mask
+                                   name="attributes_mask")
+    return attributes_mask
 

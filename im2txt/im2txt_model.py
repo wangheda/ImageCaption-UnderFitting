@@ -300,30 +300,30 @@ class Im2TxtModel(object):
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
       
-      if "top_n_concepts" in outputs:
-        self.top_n_concepts = outputs["top_n_concepts"]
+      if "top_n_attributes" in outputs:
+        self.top_n_attributes = outputs["top_n_attributes"]
     else:
       logits = outputs["logits"]
       targets = tf.reshape(self.target_seqs, [-1])
       weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
 
       # multi-label-loss 
-      if "multi_label_logits" in outputs and "multi_label_mask" in outputs:
-        multi_label_logits = outputs["multi_label_logits"]
-        multi_label_mask = outputs["multi_label_mask"]
-        multi_label_targets = input_ops.get_multi_label_target(self.target_seqs, multi_label_mask)
+      if "attributes_logits" in outputs and "attributes_mask" in outputs:
+        attributes_logits = outputs["attributes_logits"]
+        attributes_mask = outputs["attributes_mask"]
+        attributes_targets = input_ops.get_attributes_target(self.target_seqs, attributes_mask)
 
-        multi_label_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-          labels=multi_label_targets,
-          logits=multi_label_logits)
+        attributes_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+          labels=attributes_targets,
+          logits=attributes_logits)
 
-        multi_label_loss = tf.div(tf.reduce_sum(tf.multiply(multi_label_loss, multi_label_mask)),
-                                  tf.reduce_sum(multi_label_mask),
-                                  name="multi_label_loss")
+        attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_mask)),
+                                 tf.reduce_sum(attributes_mask),
+                                 name="attributes_loss")
 
-        tf.losses.add_loss(multi_label_loss)
-        tf.summary.scalar("losses/aux_loss", multi_label_loss)
-        self.aux_loss = multi_label_loss
+        tf.losses.add_loss(attributes_loss)
+        tf.summary.scalar("losses/attributes_loss", attributes_loss)
+        self.attributes_loss = attributes_loss
 
       # Compute losses.
       losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,

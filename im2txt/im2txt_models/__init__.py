@@ -13,8 +13,8 @@ tf.flags.DEFINE_integer("beam_width", 3,
                         "The beam width")
 tf.flags.DEFINE_integer("max_caption_length", 20,
                         "The max caption length for beam search decoding")
-tf.flags.DEFINE_integer("concepts_top_k", 10,
-                        "The number of concepts to generate attention memory")
+tf.flags.DEFINE_integer("attributes_top_k", 10,
+                        "The number of attributes to generate attention memory")
 
 # flags for advanced model
 tf.flags.DEFINE_boolean("use_scheduled_sampling", False,
