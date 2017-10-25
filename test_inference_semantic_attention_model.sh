@@ -1,7 +1,7 @@
 #!/bin/bash
 
 model_name="semantic_attention_model_join"
-ckpt=164078
+ckpt=520000
 device=""
 
 # the script directory

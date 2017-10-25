@@ -96,12 +96,17 @@ def main(_):
       with tf.gfile.GFile(filename, "r") as f:
         image = f.read()
 
-      predicted_ids, scores = sess.run(
-        [model.predicted_ids, model.scores], 
+      print(filename)
+
+      predicted_ids, scores, top_n_concepts = sess.run(
+        [model.predicted_ids, model.scores, model.top_n_concepts], 
         feed_dict={"image_feed:0": image})
 
       predicted_ids = np.transpose(predicted_ids, (0,2,1))   
       scores = np.transpose(scores, (0,2,1))
+      #concepts = [vocab.id_to_word(w) for w in top_n_concepts]
+      #print(" ".join(concepts))
+      #print(top_n_concepts)
       for caption in predicted_ids[0]:
         print(caption)
         caption = [id for id in caption if id >= 0 and id != FLAGS.end_token]
