@@ -96,8 +96,6 @@ def main(unused_argv):
   with g.as_default():
     # Build the model.
     model = im2txt_model.Im2TxtModel(mode="train")
-    if FLAGS.use_semantic:
-      model.set_multi_label_mask(FLAGS.vocab_file, FLAGS.concepts_file)
     model.build()
 
 

@@ -142,8 +142,7 @@ def prefetch_input_data(reader,
 def batch_with_dynamic_pad(images_and_captions,
                            batch_size,
                            queue_capacity,
-                           add_summaries=True,
-                           multi_label_mask=None):
+                           add_summaries=True):
   """Batches input images and captions.
 
   This function splits the caption into an input sequence and a target sequence,
@@ -203,13 +202,9 @@ def batch_with_dynamic_pad(images_and_captions,
     input_seq = tf.slice(caption, [0], input_length)
     target_seq = tf.slice(caption, [1], input_length)
     indicator = tf.ones(input_length, dtype=tf.int32)
-    if multi_label_mask:
-      multi_label_target = get_multi_label_target(caption, multi_label_mask)
-    else:
-      multi_label_target = None
-    enqueue_list.append([image, input_seq, target_seq, indicator, multi_label_target])
+    enqueue_list.append([image, input_seq, target_seq, indicator])
 
-  images, input_seqs, target_seqs, mask, multi_label_targets = tf.train.batch_join(
+  images, input_seqs, target_seqs, mask = tf.train.batch_join(
       enqueue_list,
       batch_size=batch_size,
       capacity=queue_capacity,
@@ -221,13 +216,16 @@ def batch_with_dynamic_pad(images_and_captions,
     tf.summary.scalar("caption_length/batch_min", tf.reduce_min(lengths))
     tf.summary.scalar("caption_length/batch_max", tf.reduce_max(lengths))
     tf.summary.scalar("caption_length/batch_mean", tf.reduce_mean(lengths))
+  
+  return images, input_seqs, target_seqs, mask
 
-  if multi_label_mask:
-    return images, input_seqs, target_seqs, mask, multi_label_targets
-  else:
-    return images, input_seqs, target_seqs, mask
-
-def get_multi_label_target(caption, multi_label_mask):
+def caption_to_multi_label_target(caption, mask):
   unique_ids, _ = tf.unique(caption)
-  return multi_label_mask * tf.reduce_sum(tf.one_hot(unique_ids, tf.shape(multi_label_mask)[0]), axis=0)
+  multi_label_target = tf.reduce_sum(tf.one_hot(unique_ids, tf.shape(mask)[0]), axis=0) * mask
+  return multi_label_target
+
+
+def get_multi_label_target(target_seq, mask):
+  return tf.map_fn(lambda x: caption_to_multi_label_target(x, mask), target_seq, dtype=tf.float32)
+
 

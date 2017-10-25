@@ -34,8 +34,6 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
 
   def build_model(self):
     model = im2txt_model.Im2TxtModel(mode="inference")
-    if FLAGS.use_semantic:
-      model.set_multi_label_mask(FLAGS.vocab_file, FLAGS.concepts_file)
     model.build()
     self.model = model
     if hasattr(model, "predicted_ids"):

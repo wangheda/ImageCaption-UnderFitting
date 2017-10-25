@@ -26,9 +26,11 @@ class SemanticAttentionModel(object):
   """
 
   def create_model(self, input_seqs, image_model_output, initializer, 
-                   mode="train", target_seqs=None, input_mask=None, multi_label_mask=None,
+                   mode="train", target_seqs=None, input_mask=None,
                    **unused_params):
     
+    multi_label_mask = self.build_multi_label_mask()
+
     # Map image model output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
       image_embeddings = tf.contrib.layers.fully_connected(
@@ -44,7 +46,6 @@ class SemanticAttentionModel(object):
 
     self.image_embeddings = image_embeddings
 
-    assert multi_label_mask != None
     # Generate multi-label logits.
     with tf.variable_scope("multi_label_logits") as scope:
       multi_label_logits = tf.contrib.layers.fully_connected(
@@ -164,7 +165,32 @@ class SemanticAttentionModel(object):
 
     if mode == "train":
       logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
-      return {"logits": logits, "top_n_concepts": top_concepts_indices}
+      return {"logits": logits, 
+              "multi_label_logits": multi_label_logits, 
+              "multi_label_mask": multi_label_mask}
     else:
       return {"bs_results": outputs, "top_n_concepts": top_concepts_indices}
+
+  def build_multi_label_mask(self, concepts_num=1000):
+    input = open(FLAGS.vocab_file)
+    vocab = [line.split(" ")[0] for line in input.readlines()]
+    input.close()
+    input = open(FLAGS.concepts_file)
+    concepts = set([line.split(" ")[0] for line in input.readlines()])
+    input.close()
+    index = 0
+    mask = []
+    for word in vocab:
+      if word in concepts:
+        mask.append(1.0)
+        index += 1
+        if index == concepts_num:
+          break
+      else:
+        mask.append(0)
+
+    multi_label_mask = tf.Variable(mask,
+                                   trainable=False,
+                                   name="multi_label_mask")
+    return multi_label_mask
 

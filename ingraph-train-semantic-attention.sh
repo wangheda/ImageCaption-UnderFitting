@@ -10,7 +10,7 @@ MODEL_DIR="${DIR}/model"
 model=SemanticAttentionModel
 model_dir_name=semantic_attention_model
 original_model_dir_name=semantic_attention_model_aux
-start_ckpt=114135
+start_ckpt=115000
 
 # copy the starting checkpoint
 if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
@@ -26,7 +26,6 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --model=${model} \
   --support_ingraph=True \
   --number_of_steps=520000 \
-  --use_semantic=True \
   --vocab_file="${DIR}/data/word_counts.txt" \
   --concepts_file="${DIR}/data/concepts.txt"
 
