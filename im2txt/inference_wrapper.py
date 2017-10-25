@@ -20,10 +20,11 @@ from __future__ import division
 from __future__ import print_function
 
 
-
+import tensorflow as tf
 import im2txt_model
 from inference_utils import inference_wrapper_base
 
+FLAGS = tf.app.flags.FLAGS
 
 class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
   """Model wrapper class for performing inference with a Im2TxtModel."""
@@ -33,6 +34,8 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
 
   def build_model(self):
     model = im2txt_model.Im2TxtModel(mode="inference")
+    if FLAGS.use_semantic:
+      model.set_multi_label_mask(FLAGS.vocab_file, FLAGS.concepts_file)
     model.build()
     self.model = model
     if hasattr(model, "predicted_ids"):

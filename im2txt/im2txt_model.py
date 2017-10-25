@@ -333,6 +333,10 @@ class Im2TxtModel(object):
       logits = outputs["logits"]
       targets = tf.reshape(self.target_seqs, [-1])
       weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+    
+    if "top_n_concepts" in outputs:
+      self.top_n_concepts = outputs["top_n_concepts"]  
+
 
       if FLAGS.use_semantic:
         multi_label_logits = outputs["multi_label_logits"]
@@ -344,6 +348,7 @@ class Im2TxtModel(object):
                                   tf.reduce_sum(self.multi_label_mask),
                                   name="multi_label_loss")
 
+        tf.losses.add_loss(multi_label_loss)
         tf.summary.scalar("losses/aux_loss", multi_label_loss)
         self.aux_loss = multi_label_loss
 

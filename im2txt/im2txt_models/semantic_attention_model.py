@@ -113,9 +113,15 @@ class SemanticAttentionModel(object):
     with tf.variable_scope("lstm", initializer=initializer) as lstm_scope:
       # Feed the image embeddings to set the initial LSTM state.
       batch_size = get_shape(image_embeddings)[0]
-
-      zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
-      _, initial_state = lstm_cell(image_embeddings, zero_state)
+      if mode == "train":
+        zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
+        _, initial_state = lstm_cell(image_embeddings, zero_state)
+      elif mode == "inference":
+        image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings, multiplier=FLAGS.beam_width)
+        zero_state = lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
+        _, initial_state = lstm_cell(image_embeddings, zero_state)
+      else:
+        raise Exception("Unknown mode!")
 
       output_layer = Dense(units=FLAGS.vocab_size,
                            name="output_layer")
@@ -140,7 +146,7 @@ class SemanticAttentionModel(object):
           embedding=embedding_map,
           start_tokens=tf.fill([batch_size], FLAGS.start_token),    #[batch_size]
           end_token=FLAGS.end_token,
-          initial_state=tf.contrib.seq2seq.tile_batch(initial_state, multiplier=FLAGS.beam_width), #[batch_size*beam_width]
+          initial_state=initial_state, #[batch_size*beam_width]
           beam_width=FLAGS.beam_width,
           output_layer=output_layer,
           length_penalty_weight=0.0)
@@ -158,7 +164,7 @@ class SemanticAttentionModel(object):
 
     if mode == "train":
       logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
-      return {"logits": logits, "multi_label_logits": multi_label_logits}
+      return {"logits": logits, "top_n_concepts": top_concepts_indices}
     else:
-      return {"bs_results": outputs, "multi_label_probs": multi_label_probs}
+      return {"bs_results": outputs, "top_n_concepts": top_concepts_indices}
 
