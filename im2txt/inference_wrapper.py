@@ -49,13 +49,23 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
                              feed_dict={"image_feed:0": encoded_image})
     return initial_state
 
-  def inference_step(self, sess, input_feed, state_feed):
-    softmax_output, state_output = sess.run(
-        fetches=["softmax:0", "lstm/state:0"],
-        feed_dict={
-            "input_feed:0": input_feed,
-            "lstm/state_feed:0": state_feed,
-        })
+  def inference_step(self, sess, input_feed, state_feed, encoded_image=None, use_attention=False):
+    # the image_feed need to be used if attention model is used
+    if use_attention:
+        softmax_output, state_output = sess.run(
+            fetches=["softmax:0", "lstm/state:0"],
+            feed_dict={
+                "image_feed:0": encoded_image,
+                "input_feed:0": input_feed,
+                "lstm/state_feed:0": state_feed
+            })
+    else:
+        softmax_output, state_output = sess.run(
+            fetches=["softmax:0", "lstm/state:0"],
+            feed_dict={
+                "input_feed:0": input_feed,
+                "lstm/state_feed:0": state_feed
+            })
     return softmax_output, state_output, None
 
   def support_ingraph(self):

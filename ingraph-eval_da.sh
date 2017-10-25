@@ -2,14 +2,15 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_model_finetune"
-num_processes=3
-gpu_fraction=0.28
+model_name="show_and_tell_in_graph_model_da"
+num_processes=2
+gpu_fraction=0.40
 device=1
+model=ShowAndTellInGraphModel
 
-for ckpt in 540807 553187 565648 578097 590518 602943 615359 627785 639372; do 
+MODEL_DIR="${DIR}/model/${model_name}"
+for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do 
   # the script directory
-  MODEL_DIR="${DIR}/model/${model_name}"
   VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
   VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
 
@@ -27,13 +28,19 @@ for ckpt in 540807 553187 565648 578097 590518 602943 615359 627785 639372; do
         --checkpoint_path=${CHECKPOINT_PATH} \
         --vocab_file=${DIR}/data/word_counts.txt \
         --output=${OUTPUT_DIR}/part-${prefix}.json \
+        --model=${model} \
+        --support_ingraph=True \
         --gpu_memory_fraction=$gpu_fraction"
     fi
   done | parallel -j $num_processes
 
-  python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json
-  echo output saved to ${OUTPUT_DIR}/out.json
+  if [ ! -f ${OUTPUT_DIR}/out.json ]; then
+    python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json
+    echo output saved to ${OUTPUT_DIR}/out.json
+  fi
 
-  python ${DIR}/tools/eval/run_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE | tee ${OUTPUT_DIR}/out.eval | grep ^Eval
-  echo eval result saved to ${OUTPUT_DIR}/out.eval
+  if [ ! -f ${OUTPUT_DIR}/out.eval ]; then
+    python ${DIR}/tools/eval/run_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE | tee ${OUTPUT_DIR}/out.eval | grep ^Eval
+    echo eval result saved to ${OUTPUT_DIR}/out.eval
+  fi
 done
