@@ -329,14 +329,13 @@ class Im2TxtModel(object):
       elif "bs_results" in outputs:
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
+      
+      if "top_n_concepts" in outputs:
+        self.top_n_concepts = outputs["top_n_concepts"]
     else:
       logits = outputs["logits"]
       targets = tf.reshape(self.target_seqs, [-1])
       weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
-    
-    if "top_n_concepts" in outputs:
-      self.top_n_concepts = outputs["top_n_concepts"]  
-
 
       if FLAGS.use_semantic:
         multi_label_logits = outputs["multi_label_logits"]
