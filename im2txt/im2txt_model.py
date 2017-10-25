@@ -174,8 +174,6 @@ class Im2TxtModel(object):
       self.target_seqs (training and eval only)
       self.input_mask (training and eval only)
     """
-    multi_label_targets = None
-
     if self.mode == "inference":
       # In inference mode, images and inputs are fed via placeholders.
       image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
@@ -232,7 +230,6 @@ class Im2TxtModel(object):
       # Batch inputs.
       queue_capacity = (2 * FLAGS.num_preprocess_threads *
                         FLAGS.batch_size)
-
       images, input_seqs, target_seqs, input_mask = (
           input_ops.batch_with_dynamic_pad(images_and_captions,
                                            batch_size=FLAGS.batch_size,
@@ -281,6 +278,7 @@ class Im2TxtModel(object):
       self.target_cross_entropy_losses (training and eval only)
       self.target_cross_entropy_loss_weights (training and eval only)
     """
+    
     caption_model_fn = find_class_by_name(FLAGS.model, [im2txt_models])
     caption_model = caption_model_fn()
 
@@ -376,5 +374,3 @@ class Im2TxtModel(object):
     self.get_image_output()
     self.build_model()
     self.setup_inception_initializer()
-
-    
