@@ -8,8 +8,8 @@ TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 
 model=ShowAndTellInGraphModel
-model_dir_name=show_and_tell_in_graph_model_3_finetune_with_decay
-original_model_dir_name=show_and_tell_in_graph_model_3
+model_dir_name=show_and_tell_in_graph_model_2_finetune_with_decay
+original_model_dir_name=show_and_tell_in_graph_model_2
 start_ckpt=105000
 
 # copy the starting checkpoint
@@ -24,6 +24,8 @@ cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
+  --initial_learning_rate=1.0 \
+  --learning_rate_decay_factor=0.6 \
   --train_inception_with_decay=True \
   --support_ingraph=True \
   --number_of_steps=600000

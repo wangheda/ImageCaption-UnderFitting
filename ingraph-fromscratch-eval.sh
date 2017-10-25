@@ -4,7 +4,6 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 model_name="show_and_tell_in_graph_model_fromscratch"
 num_processes=1
-gpu_fraction=0.9
 device=1
 model=ShowAndTellInGraphModel
 
@@ -29,8 +28,7 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --vocab_file=${DIR}/data/word_counts.txt \
         --output=${OUTPUT_DIR}/part-${prefix}.json \
         --model=${model} \
-        --support_ingraph=True \
-        --gpu_memory_fraction=$gpu_fraction"
+        --support_ingraph=True"
     fi
   done | parallel -j $num_processes
 

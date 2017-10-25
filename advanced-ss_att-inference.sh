@@ -2,9 +2,8 @@
 
 model_name="show_and_tell_advanced_model_attention_finetune_with_decay"
 model="ShowAndTellAdvancedModel"
-ckpt=341571
+ckpt=580699
 num_processes=1
-gpu_fraction=0.98
 device=0
 
 # the script directory
@@ -31,8 +30,7 @@ for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
     --use_attention_wrapper=True \
     --attention_mechanism=BahdanauAttention \
     --num_lstm_layers=1 \
-    --support_ingraph=True \
-    --gpu_memory_fraction=$gpu_fraction"
+    --support_ingraph=True"
 done | bash #parallel -j $num_processes
 
 cd ${DIR}
