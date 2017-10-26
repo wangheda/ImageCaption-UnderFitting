@@ -8,8 +8,8 @@ TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 
 model=ShowAndTellAdvancedModel
-model_dir_name=show_and_tell_advanced_model_semantic_attention_finetune_with_decay
-original_model_dir_name=show_and_tell_advanced_model_semantic_attention
+model_dir_name=show_and_tell_advanced_model_vis_sem_attention_finetune_with_decay
+original_model_dir_name=show_and_tell_advanced_model_vis_sem_attention
 start_ckpt=105000
 
 # copy the starting checkpoint
@@ -24,8 +24,9 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
-  --initial_learning_rate=1.0 \
-  --learning_rate_decay_factor=0.6 \
+  --initial_learning_rate=1.29 \
+  --learning_rate_decay_factor=0.88 \
+  --num_epochs_per_decay=2.0 \
   --inception_return_tuple=True \
   --use_scheduled_sampling=False \
   --use_attention_wrapper=True \
