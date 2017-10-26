@@ -50,15 +50,25 @@ class ShowAndTellAdvancedModel(object):
           scope=scope)
 
     # this may be used as auxiliary loss, or as the
-    if FLAGS.predict_words_via_image_embedding:
-      with tf.variable_scope("word_prediction") as scope:
-        word_predictions = tf.contrib.layers.fully_connected(
-            inputs=image_embeddings,
-            num_outputs=FLAGS.vocab_size,
-            activation_fn=tf.nn.sigmoid,
-            weights_initializer=initializer,
-            biases_initializer=None,
-            scope=scope)
+    if FLAGS.predict_words_via_image_output:
+      with tf.variable_scope("word_prediction"):
+        image_nogradient_output = tf.stop_gradient(image_model_output)
+        with tf.variable_scope("hidden"):
+          word_hidden = tf.contrib.layers.fully_connected(
+              inputs=image_nogradient_output,
+              num_outputs=FLAGS.embedding_size,
+              activation_fn=tf.nn.relu,
+              weights_initializer=initializer,
+              biases_initializer=None)
+          print word_hidden
+        with tf.variable_scope("output"):
+          word_predictions = tf.contrib.layers.fully_connected(
+              inputs=word_hidden,
+              num_outputs=FLAGS.vocab_size,
+              activation_fn=tf.nn.sigmoid,
+              weights_initializer=initializer,
+              biases_initializer=None)
+          print word_predictions
         model_outputs["word_predictions"] = word_predictions
 
     # Save the embedding size in the graph.
@@ -135,6 +145,8 @@ class ShowAndTellAdvancedModel(object):
       elif FLAGS.weight_semantic_memory_with_soft_prediction:
         word_prior = word_predictions
 
+      masked_embedding = tf.einsum("ij,jk->ijk", word_prior, semantic_embedding_map)
+
       with tf.variable_scope("word_hash"):
         word_hash_map = tf.get_variable(
             name="word_hash_map",
@@ -142,7 +154,7 @@ class ShowAndTellAdvancedModel(object):
             initializer=initializer)
         word_hasher = tf.nn.softmax(word_hash_map)
 
-      semantic_memory = tf.einsum("ij,jk,jl->ilk", word_prior, semantic_embedding_map, word_hasher)
+      semantic_memory = tf.einsum("ijk,jl->ilk", masked_embedding, word_hasher)
 
       if mode == "inference":
         semantic_memory = tf.contrib.seq2seq.tile_batch(semantic_memory, multiplier=FLAGS.beam_width)
@@ -263,11 +275,13 @@ class ShowAndTellAdvancedModel(object):
 
   def top_k_mask(self, logits, k = 20):
     values, indices = tf.nn.top_k(logits, k = k)
-    print indices
-    indices = tf.cast(indices, tf.int64)
-    st = tf.sparse_to_dense(sparse_indices = indices,
-                         output_shape = logits.get_shape().as_list(),
-                         sparse_values = 1.0 / k)
-    print("st", st)
-    return st
-
+    sp_idx = tf.where(indices > -1)
+    sp_val = tf.gather_nd(indices, sp_idx)
+    mask = tf.sparse_to_indicator(
+              sp_input = tf.SparseTensor(indices=sp_idx, 
+                                         values=sp_val, 
+                                         dense_shape=logits.get_shape().as_list()),
+              vocab_size = FLAGS.vocab_size)
+    mask = tf.cast(mask, dtype=tf.float32) / k
+    print("mask", mask)
+    return mask

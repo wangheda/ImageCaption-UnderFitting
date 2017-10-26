@@ -43,7 +43,7 @@ tf.flags.DEFINE_string("attention_mechanism", "BahdanauAttention",
 tf.flags.DEFINE_boolean("output_attention", False,
                         "If the attention mechanism used in attention wrapper is Bahdanau, "
                         "this value should be false. If the mechanism is Lung, this value should be set true.")
-tf.flags.DEFINE_boolean("predict_words_via_image_embedding", False,
+tf.flags.DEFINE_boolean("predict_words_via_image_output", False,
                         "If use semantic attention, then from which tensor the words are predicted.")
 tf.flags.DEFINE_boolean("predict_words_via_middle_layer", False,
                         "If use semantic attention, then from which tensor the words are predicted. "
