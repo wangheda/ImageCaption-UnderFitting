@@ -80,7 +80,7 @@ class SemanticAttentionModel(object):
 
     # add semantic attention here!!!
     attributes_probs = tf.sigmoid(attributes_logits) * attributes_mask
-    _, top_attributes_indices = tf.nn.top_k(attributes_probs, FLAGS.attributes_top_k)
+    top_attributes_probs, top_attributes_indices = tf.nn.top_k(attributes_probs, FLAGS.attributes_top_k)
     attention_memory = tf.nn.embedding_lookup(embedding_map, top_attributes_indices)
     if mode == "inference":
       attention_memory = tf.contrib.seq2seq.tile_batch(attention_memory, multiplier=FLAGS.beam_width)
@@ -169,7 +169,7 @@ class SemanticAttentionModel(object):
               "attributes_logits": attributes_logits, 
               "attributes_mask": attributes_mask}
     else:
-      return {"bs_results": outputs, "top_n_attributes": top_attributes_indices}
+      return {"bs_results": outputs, "top_n_attributes": (top_attributes_probs, top_attributes_indices)}
 
   def build_attributes_mask(self, attributes_num=1000):
     input = open(FLAGS.vocab_file)

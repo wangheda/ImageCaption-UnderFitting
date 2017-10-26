@@ -37,7 +37,7 @@ tf.flags.DEFINE_string("checkpoint_path", "",
                        "Model checkpoint file or directory containing a "
                        "model checkpoint file.")
 tf.flags.DEFINE_string("vocab_file", "", "Text file containing the vocabulary.")
-tf.flags.DEFINE_string("concepts_file", "", "Text file containing the concepts.")
+tf.flags.DEFINE_string("attributes_file", "", "Text file containing the attributes.")
 tf.flags.DEFINE_string("input_file_pattern", "", "The pattern of images.")
 #tf.flags.DEFINE_string("output", "", "The output file.")
 tf.flags.DEFINE_float("gpu_memory_fraction", 1.0, "Fraction of gpu memory used in inference.")
@@ -58,7 +58,6 @@ def main(_):
   with g.as_default():
     tf.logging.info("Building model.")
     model = Im2TxtModel(mode="inference")
-    model.set_multi_label_mask(FLAGS.vocab_file, FLAGS.concepts_file)
     model.build()
     saver = tf.train.Saver()
     if tf.gfile.IsDirectory(checkpoint_path):
@@ -82,7 +81,6 @@ def main(_):
   with tf.Session(graph=g, config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
     # Load the model from checkpoint.
     restore_fn(sess)
-    print(model.multi_label_mask)
     # Prepare the caption generator. Here we are implicitly using the default
     # beam search parameters. See caption_generator.py for a description of the
     # available beam search parameters.
@@ -98,15 +96,17 @@ def main(_):
 
       print(filename)
 
-      predicted_ids, scores, top_n_concepts = sess.run(
-        [model.predicted_ids, model.scores, model.top_n_concepts], 
+      predicted_ids, scores, top_n_attributes = sess.run(
+        [model.predicted_ids, model.scores, model.top_n_attributes], 
         feed_dict={"image_feed:0": image})
 
       predicted_ids = np.transpose(predicted_ids, (0,2,1))   
       scores = np.transpose(scores, (0,2,1))
-      #concepts = [vocab.id_to_word(w) for w in top_n_concepts]
-      #print(" ".join(concepts))
-      #print(top_n_concepts)
+      attr_probs, attr_ids = top_n_attributes
+      attributes = [vocab.id_to_word(w) for w in attr_ids[0]]
+      print(" ".join(attributes))
+      print(attr_probs[0])
+      #print(top_n_attributes)
       for caption in predicted_ids[0]:
         print(caption)
         caption = [id for id in caption if id >= 0 and id != FLAGS.end_token]

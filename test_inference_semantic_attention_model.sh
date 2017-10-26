@@ -1,7 +1,8 @@
 #!/bin/bash
 
 model_name="semantic_attention_model_join"
-ckpt=520000
+#ckpt=520000
+ckpt=122536
 device=""
 
 # the script directory
@@ -17,6 +18,6 @@ CUDA_VISIBLE_DEVICES=$device python test_inference_semantic_attention_model.py \
     --input_file_pattern="${IMAGE_DIR}/*.jpg" \
     --checkpoint_path=${CHECKPOINT_PATH} \
     --vocab_file=${DIR}/data/word_counts.txt \
-    --concepts_file=${DIR}/data/concepts.txt \
+    --attributes_file=${DIR}/data/attributes.txt \
     --model=SemanticAttentionModel \
     --use_semantic=True

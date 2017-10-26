@@ -2,7 +2,8 @@
 
 model_name="semantic_attention_model_join"
 model="SemanticAttentionModel"
-ckpt=520000
+#ckpt=520000
+ckpt=122536
 num_processes=2
 gpu_fraction=0.4
 device=0
@@ -27,11 +28,10 @@ for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
         --input_file_pattern='${VALIDATE_IMAGE_DIR}/${prefix}*.jpg' \
         --checkpoint_path=${CHECKPOINT_PATH} \
         --vocab_file=${DIR}/data/word_counts.txt \
-        --concepts_file=${DIR}/data/concepts.txt \
+        --attributes_file=${DIR}/data/attributes.txt \
         --output=${OUTPUT_DIR}/part-${prefix}.json \
         --model=${model} \
         --support_ingraph=True \
-        --use_semantic=True \
         --gpu_memory_fraction=$gpu_fraction"
   fi
 done | parallel -j $num_processes
