@@ -49,11 +49,11 @@ class SemanticAttentionModel(object):
     # Generate multi-label logits.
     with tf.variable_scope("attributes_logits") as scope:
       attributes_logits = tf.contrib.layers.fully_connected(
-          inputs=image_embeddings,
+          inputs=image_model_output,
           num_outputs=get_shape(attributes_mask)[0],
           activation_fn=None,
           weights_initializer=initializer,
-          biases_initializer=None,
+          #biases_initializer=None,
           scope=scope)
 
     # build_seq_embeddings
