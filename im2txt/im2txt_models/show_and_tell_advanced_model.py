@@ -39,11 +39,16 @@ class ShowAndTellAdvancedModel(object):
       print image_model_output
       print middle_layer
     
+    if FLAGS.use_lexical_embedding:
+      embedding_size = FLAGS.embedding_size + FLAGS.lexical_embedding_size
+    else:
+      embedding_size = FLAGS.embedding_size
+
     # Map image model output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
       image_embeddings = tf.contrib.layers.fully_connected(
           inputs=image_model_output,
-          num_outputs=FLAGS.embedding_size,
+          num_outputs=embedding_size,
           activation_fn=None,
           weights_initializer=initializer,
           biases_initializer=None,
@@ -56,7 +61,7 @@ class ShowAndTellAdvancedModel(object):
         with tf.variable_scope("hidden"):
           word_hidden = tf.contrib.layers.fully_connected(
               inputs=image_nogradient_output,
-              num_outputs=FLAGS.embedding_size,
+              num_outputs=embedding_size,
               activation_fn=tf.nn.relu,
               weights_initializer=initializer,
               biases_initializer=None)
@@ -81,6 +86,16 @@ class ShowAndTellAdvancedModel(object):
           name="map",
           shape=[FLAGS.vocab_size, FLAGS.embedding_size],
           initializer=initializer)
+
+      if FLAGS.use_lexical_embedding:
+        lexical_mapping, lexical_size = self.get_lexical_mapping(FLAGS.lexical_mapping_file)
+        lexical_embedding = tf.get_variable(
+            name="lexical_map",
+            shape=[lexical_size, FLAGS.lexical_embedding_size],
+            initializer=initializer)
+        lexical_embedding_map = tf.matmul(lexical_mapping, lexical_embedding)
+        embedding_map = tf.concat([embedding_map, lexical_embedding_map], axis=1)
+        
       seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
 
     """Builds the model.
@@ -286,3 +301,15 @@ class ShowAndTellAdvancedModel(object):
     mask = tf.cast(mask, dtype=tf.float32) / k
     print("mask", mask)
     return mask
+
+  def get_lexical_mapping(self, lexical_mapping_file):
+    mapping = []
+    with open(lexical_mapping_file) as F:
+      for line in F:
+        mapping.append(map(float, line.strip().split()))
+    assert len(set(map(len, mapping))) == 1
+    lexical_size = len(mapping[0])
+    lexical_mapping = tf.constant(mapping, dtype=tf.float32, shape=[FLAGS.vocab_size, lexical_size])
+    return lexical_mapping, lexical_size
+      
+        

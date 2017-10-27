@@ -43,6 +43,7 @@ tf.flags.DEFINE_string("attention_mechanism", "BahdanauAttention",
 tf.flags.DEFINE_boolean("output_attention", False,
                         "If the attention mechanism used in attention wrapper is Bahdanau, "
                         "this value should be false. If the mechanism is Lung, this value should be set true.")
+
 tf.flags.DEFINE_boolean("predict_words_via_image_output", False,
                         "If use semantic attention, then from which tensor the words are predicted.")
 tf.flags.DEFINE_boolean("predict_words_via_middle_layer", False,
@@ -59,6 +60,12 @@ tf.flags.DEFINE_boolean("weight_semantic_memory_with_soft_prediction", False,
 tf.flags.DEFINE_integer("semantic_attention_word_hash_depth", 128,
                         "Project the vocab_size of the word embedding memory to a lower dimension.")
 
+tf.flags.DEFINE_boolean("use_lexical_embedding", False,
+                        "If set true, use lexical mapping and embedding.")
+tf.flags.DEFINE_string("lexical_mapping_file", "data/word2postag.txt",
+                        "If set true, use lexical mapping and embedding.")
+tf.flags.DEFINE_integer("lexical_embedding_size", 32,
+                        "The dimension of lexical embedding.")
 
 # models
 from show_and_tell_model import ShowAndTellModel
