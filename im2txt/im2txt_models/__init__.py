@@ -43,7 +43,12 @@ tf.flags.DEFINE_string("attention_mechanism", "BahdanauAttention",
 tf.flags.DEFINE_boolean("output_attention", False,
                         "If the attention mechanism used in attention wrapper is Bahdanau, "
                         "this value should be false. If the mechanism is Lung, this value should be set true.")
-
+tf.flags.DEFINE_boolean("use_lexical_embedding", False,
+                        "If set true, use lexical mapping and embedding.")
+tf.flags.DEFINE_string("lexical_mapping_file", "data/word2postag.txt",
+                        "If set true, use lexical mapping and embedding.")
+tf.flags.DEFINE_integer("lexical_embedding_size", 32,
+                        "The dimension of lexical embedding.")
 
 # models
 from show_and_tell_model import ShowAndTellModel

@@ -57,6 +57,16 @@ class ShowAndTellAdvancedModel(object):
           name="map",
           shape=[FLAGS.vocab_size, FLAGS.embedding_size],
           initializer=initializer)
+
+      if FLAGS.use_lexical_embedding:
+        lexical_mapping, lexical_size = self.get_lexical_mapping(FLAGSS.lexical_mapping_file)
+        lexical_embedding = tf.get_variable(
+            name="lexical_map",
+            shape=[lexical_size, FLAGS.lexical_embedding_size],
+            initializer=initializer)
+        lexical_embedding_map = tf.matmul(lexical_mapping, lexical_embedding)
+        embedding_map = tf.concat([embedding_map, lexical_embedding_map], axis=1)
+        
       seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
 
     """Builds the model.
