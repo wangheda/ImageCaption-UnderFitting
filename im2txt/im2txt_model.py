@@ -311,6 +311,19 @@ class Im2TxtModel(object):
                           tf.reduce_sum(weights),
                           name="batch_loss")
       tf.losses.add_loss(batch_loss)
+
+      if "word_predictions" in outputs:
+        word_predictions = outputs["word_predictions"]
+        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
+        word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
+                                                            logits=word_predictions)
+        word_loss = tf.div(tf.reduce_sum(word_loss), 
+                           reduce(lambda x,y: x*y, word_loss.get_shape().as_list()),
+                           name="word_loss")
+        tf.losses.add_loss(word_loss)
+        tf.summary.scalar("losses/word_loss", word_loss)
+        self.word_loss = word_loss
+
       total_loss = tf.losses.get_total_loss()
 
       # Add summaries.

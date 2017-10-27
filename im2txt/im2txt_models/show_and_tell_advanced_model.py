@@ -32,20 +32,49 @@ class ShowAndTellAdvancedModel(object):
                    global_step=None,
                    **unused_params):
 
+    model_outputs = {}
+
     if FLAGS.inception_return_tuple:
       image_model_output, middle_layer = image_model_output
       print image_model_output
       print middle_layer
     
+    if FLAGS.use_lexical_embedding:
+      embedding_size = FLAGS.embedding_size + FLAGS.lexical_embedding_size
+    else:
+      embedding_size = FLAGS.embedding_size
+
     # Map image model output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
       image_embeddings = tf.contrib.layers.fully_connected(
           inputs=image_model_output,
-          num_outputs=FLAGS.embedding_size,
+          num_outputs=embedding_size,
           activation_fn=None,
           weights_initializer=initializer,
           biases_initializer=None,
           scope=scope)
+
+    # this may be used as auxiliary loss, or as the
+    if FLAGS.predict_words_via_image_output:
+      with tf.variable_scope("word_prediction"):
+        image_nogradient_output = tf.stop_gradient(image_model_output)
+        with tf.variable_scope("hidden"):
+          word_hidden = tf.contrib.layers.fully_connected(
+              inputs=image_nogradient_output,
+              num_outputs=embedding_size,
+              activation_fn=tf.nn.relu,
+              weights_initializer=initializer,
+              biases_initializer=None)
+          print word_hidden
+        with tf.variable_scope("output"):
+          word_predictions = tf.contrib.layers.fully_connected(
+              inputs=word_hidden,
+              num_outputs=FLAGS.vocab_size,
+              activation_fn=tf.nn.sigmoid,
+              weights_initializer=initializer,
+              biases_initializer=None)
+          print word_predictions
+        model_outputs["word_predictions"] = word_predictions
 
     # Save the embedding size in the graph.
     tf.constant(FLAGS.embedding_size, name="embedding_size")
@@ -59,7 +88,7 @@ class ShowAndTellAdvancedModel(object):
           initializer=initializer)
 
       if FLAGS.use_lexical_embedding:
-        lexical_mapping, lexical_size = self.get_lexical_mapping(FLAGSS.lexical_mapping_file)
+        lexical_mapping, lexical_size = self.get_lexical_mapping(FLAGS.lexical_mapping_file)
         lexical_embedding = tf.get_variable(
             name="lexical_map",
             shape=[lexical_size, FLAGS.lexical_embedding_size],
@@ -115,6 +144,49 @@ class ShowAndTellAdvancedModel(object):
           lstm_cell,
           attention_mechanism,
           attention_layer_size=FLAGS.num_attention_depth,
+          output_attention=FLAGS.output_attention)
+
+    if FLAGS.use_semantic_attention:
+      if FLAGS.use_separate_embedding_for_semantic_attention:
+        semantic_embedding_map = tf.get_variable(
+            name="semantic_map",
+            shape=[FLAGS.vocab_size, FLAGS.embedding_size],
+            initializer=initializer)
+      else:
+        semantic_embedding_map = embedding_map
+        
+      if FLAGS.weight_semantic_memory_with_hard_prediction:
+        word_prior = self.top_k_mask(word_predictions, 20)
+      elif FLAGS.weight_semantic_memory_with_soft_prediction:
+        word_prior = word_predictions
+
+      masked_embedding = tf.einsum("ij,jk->ijk", word_prior, semantic_embedding_map)
+
+      with tf.variable_scope("word_hash"):
+        word_hash_map = tf.get_variable(
+            name="word_hash_map",
+            shape=[FLAGS.vocab_size, FLAGS.semantic_attention_word_hash_depth],
+            initializer=initializer)
+        word_hasher = tf.nn.softmax(word_hash_map)
+
+      semantic_memory = tf.einsum("ijk,jl->ilk", masked_embedding, word_hasher)
+
+      if mode == "inference":
+        semantic_memory = tf.contrib.seq2seq.tile_batch(semantic_memory, multiplier=FLAGS.beam_width)
+
+      semantic_attention_mechanism = getattr(tf.contrib.seq2seq, 
+          FLAGS.attention_mechanism)(
+              num_units = FLAGS.semantic_attention_word_hash_depth,
+              memory = semantic_memory)
+
+      print semantic_attention_mechanism.alignments_size
+      print semantic_attention_mechanism.keys
+      print semantic_attention_mechanism.values
+
+      lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
+          lstm_cell,
+          semantic_attention_mechanism,
+          attention_layer_size=FLAGS.semantic_attention_word_hash_depth,
           output_attention=FLAGS.output_attention)
 
     #output_layer = Dense(units=FLAGS.vocab_size,
@@ -210,7 +282,33 @@ class ShowAndTellAdvancedModel(object):
 
     if mode == "train":
       logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
-      return {"logits": logits}
+      model_outputs["logits"] = logits
     else:
-      return {"bs_results": outputs}
+      model_outputs["bs_results"] = outputs
 
+    return model_outputs
+
+  def top_k_mask(self, logits, k = 20):
+    values, indices = tf.nn.top_k(logits, k = k)
+    sp_idx = tf.where(indices > -1)
+    sp_val = tf.gather_nd(indices, sp_idx)
+    mask = tf.sparse_to_indicator(
+              sp_input = tf.SparseTensor(indices=sp_idx, 
+                                         values=sp_val, 
+                                         dense_shape=logits.get_shape().as_list()),
+              vocab_size = FLAGS.vocab_size)
+    mask = tf.cast(mask, dtype=tf.float32) / k
+    print("mask", mask)
+    return mask
+
+  def get_lexical_mapping(self, lexical_mapping_file):
+    mapping = []
+    with open(lexical_mapping_file) as F:
+      for line in F:
+        mapping.append(map(float, line.strip().split()))
+    assert len(set(map(len, mapping))) == 1
+    lexical_size = len(mapping[0])
+    lexical_mapping = tf.constant(mapping, dtype=tf.float32, shape=[FLAGS.vocab_size, lexical_size])
+    return lexical_mapping, lexical_size
+      
+        
