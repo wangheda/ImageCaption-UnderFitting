@@ -140,10 +140,11 @@ class ShowAndTellAdvancedModel(object):
       else:
         semantic_embedding_map = embedding_map
         
+      no_gradient_word_predictions = tf.stop_gradient(word_predictions)
       if FLAGS.weight_semantic_memory_with_hard_prediction:
-        word_prior = self.top_k_mask(word_predictions, 20)
+        word_prior = self.top_k_mask(no_gradient_word_predictions, 20)
       elif FLAGS.weight_semantic_memory_with_soft_prediction:
-        word_prior = word_predictions
+        word_prior = no_gradient_word_predictions
 
       masked_embedding = tf.einsum("ij,jk->ijk", word_prior, semantic_embedding_map)
 
