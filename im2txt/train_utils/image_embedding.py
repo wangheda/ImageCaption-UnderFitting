@@ -38,7 +38,8 @@ def inception_v3(images,
                  add_summaries=True,
                  scope="InceptionV3",
                  use_box=False,
-                 inception_return_tuple=False):
+                 inception_return_tuple=False,
+                 yet_another_inception=False):
   """Builds an Inception V3 subgraph for image embeddings.
 
   Args:
@@ -122,7 +123,50 @@ def inception_v3(images,
     for v in end_points.values():
       tf.contrib.layers.summaries.summarize_activation(v)
 
-  if inception_return_tuple:
-    return net, original_net
+  if yet_another_inception:
+    ya_scope = "ya_" + scope
+    with tf.variable_scope(ya_scope, "InceptionV3", [images]) as scope:
+      with slim.arg_scope(
+          [slim.conv2d, slim.fully_connected],
+          weights_regularizer=weights_regularizer,
+          trainable=trainable):
+        with slim.arg_scope(
+            [slim.conv2d],
+            weights_initializer=tf.truncated_normal_initializer(stddev=stddev),
+            activation_fn=tf.nn.relu,
+            normalizer_fn=slim.batch_norm,
+            normalizer_params=batch_norm_params):
+          ya_net, ya_end_points = inception_v3_base(images, scope=scope)
+          with tf.variable_scope("logits"):
+            ya_shape = ya_net.get_shape()
+            print(ya_net.get_shape().as_list())
+            if inception_return_tuple:
+              ya_original_net = tf.reshape(ya_net, [tf.cast(ya_shape[0],tf.int32), tf.cast(ya_shape[1]*shape[2],tf.int32), tf.cast(ya_shape[3],tf.int32)])
+              ya_net = slim.avg_pool2d(ya_net, ya_shape[1:3], padding="VALID", scope="pool")
+            elif use_box:
+              ya_net = tf.reshape(ya_net, [tf.cast(ya_shape[0],tf.int32), tf.cast(ya_shape[1]*ya_shape[2],tf.int32), tf.cast(ya_shape[3],tf.int32)])
+            else:
+              ya_net = slim.avg_pool2d(ya_net, ya_shape[1:3], padding="VALID", scope="pool")
+
+            ya_net = slim.dropout(
+                ya_net,
+                keep_prob=dropout_keep_prob,
+                is_training=is_inception_model_training,
+                scope="dropout")
+            ya_net = slim.flatten(ya_net, scope="flatten")
+
+    # Add summaries.
+    if add_summaries:
+      for v in ya_end_points.values():
+        tf.contrib.layers.summaries.summarize_activation(v)
+
+  if yet_another_inception:
+    if inception_return_tuple:
+      return net, original_net, ya_net, ya_original_net
+    else:
+      return net, ya_net
   else:
-    return net
+    if inception_return_tuple:
+      return net, original_net
+    else:
+      return net

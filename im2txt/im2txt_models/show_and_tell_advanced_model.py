@@ -34,16 +34,50 @@ class ShowAndTellAdvancedModel(object):
 
     model_outputs = {}
 
-    if FLAGS.inception_return_tuple:
-      image_model_output, middle_layer = image_model_output
-      print image_model_output
-      print middle_layer
-    
-    if FLAGS.use_lexical_embedding:
-      embedding_size = FLAGS.embedding_size + FLAGS.lexical_embedding_size
-    else:
-      embedding_size = FLAGS.embedding_size
+    print "image_model_output", image_model_output
 
+    if FLAGS.yet_another_inception:
+      if FLAGS.inception_return_tuple:
+        image_model_output, middle_layer, ya_image_model_output, ya_middle_layer = image_model_output
+      else:
+        image_model_output, ya_image_model_output = image_model_output
+    else:
+      if FLAGS.inception_return_tuple:
+        image_model_output, middle_layer = image_model_output
+      else:
+        image_model_output = image_model_output
+    
+
+    # build_seq_embeddings
+    with tf.variable_scope("seq_embedding"):
+      embedding_map = tf.get_variable(
+          name="map",
+          shape=[FLAGS.vocab_size, FLAGS.embedding_size],
+          initializer=initializer)
+
+      if FLAGS.use_lexical_embedding:
+        mapping_types = map(lambda x: x.strip(), FLAGS.lexical_embedding_type.split(","))
+        mapping_files = map(lambda x: x.strip(), FLAGS.lexical_mapping_file.split(","))
+        mapping_sizes = map(lambda x: int(x.strip()), FLAGS.lexical_embedding_size.split(","))
+        for mtype, mfile, msize in zip(mapping_types, mapping_files, mapping_sizes):
+          if mtype == "postag":
+            lexical_mapping, lexical_size = self.get_lexical_mapping(mfile)
+          elif mtype == "char":
+            lexical_mapping, lexical_size = self.get_lexical_mapping(mfile)
+          else:
+            raise Exception("Unknown semantic_attention_type!")
+
+          postfix = "_"+mtype if mtype != "postag" else ""
+          lexical_embedding = tf.get_variable(
+              name="lexical_map" + postfix,
+              shape=[lexical_size, msize],
+              initializer=initializer)
+          lexical_embedding_map = tf.matmul(lexical_mapping, lexical_embedding)
+          embedding_map = tf.concat([embedding_map, lexical_embedding_map], axis=1)
+        
+      seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
+
+    embedding_size = embedding_map.get_shape().as_list()[1]
     # Map image model output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
       image_embeddings = tf.contrib.layers.fully_connected(
@@ -57,10 +91,13 @@ class ShowAndTellAdvancedModel(object):
     # this may be used as auxiliary loss, or as the
     if FLAGS.predict_words_via_image_output:
       with tf.variable_scope("word_prediction"):
-        image_nogradient_output = tf.stop_gradient(image_model_output)
+        if FLAGS.yet_another_inception:
+          word_prediction_image_output = ya_image_model_output
+        else:
+          word_prediction_image_output = tf.stop_gradient(image_model_output)
         with tf.variable_scope("hidden"):
           word_hidden = tf.contrib.layers.fully_connected(
-              inputs=image_nogradient_output,
+              inputs=word_prediction_image_output,
               num_outputs=embedding_size,
               activation_fn=tf.nn.relu,
               weights_initializer=initializer,
@@ -80,23 +117,6 @@ class ShowAndTellAdvancedModel(object):
     tf.constant(FLAGS.embedding_size, name="embedding_size")
 
     self.image_embeddings = image_embeddings
-    # build_seq_embeddings
-    with tf.variable_scope("seq_embedding"):
-      embedding_map = tf.get_variable(
-          name="map",
-          shape=[FLAGS.vocab_size, FLAGS.embedding_size],
-          initializer=initializer)
-
-      if FLAGS.use_lexical_embedding:
-        lexical_mapping, lexical_size = self.get_lexical_mapping(FLAGS.lexical_mapping_file)
-        lexical_embedding = tf.get_variable(
-            name="lexical_map",
-            shape=[lexical_size, FLAGS.lexical_embedding_size],
-            initializer=initializer)
-        lexical_embedding_map = tf.matmul(lexical_mapping, lexical_embedding)
-        embedding_map = tf.concat([embedding_map, lexical_embedding_map], axis=1)
-        
-      seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
 
     """Builds the model.
     Inputs:
@@ -156,21 +176,30 @@ class ShowAndTellAdvancedModel(object):
         semantic_embedding_map = embedding_map
         
       no_gradient_word_predictions = tf.stop_gradient(word_predictions)
-      if FLAGS.weight_semantic_memory_with_hard_prediction:
-        word_prior = self.top_k_mask(no_gradient_word_predictions, 20)
-      elif FLAGS.weight_semantic_memory_with_soft_prediction:
-        word_prior = no_gradient_word_predictions
 
-      masked_embedding = tf.einsum("ij,jk->ijk", word_prior, semantic_embedding_map)
+      if FLAGS.semantic_attention_type == "wordhash":
+        if FLAGS.weight_semantic_memory_with_hard_prediction:
+          word_prior = self.top_k_mask(no_gradient_word_predictions, 
+                                       FLAGS.semantic_attention_topk_word)
+        elif FLAGS.weight_semantic_memory_with_soft_prediction:
+          word_prior = no_gradient_word_predictions
 
-      with tf.variable_scope("word_hash"):
-        word_hash_map = tf.get_variable(
-            name="word_hash_map",
-            shape=[FLAGS.vocab_size, FLAGS.semantic_attention_word_hash_depth],
-            initializer=initializer)
-        word_hasher = tf.nn.softmax(word_hash_map)
+        masked_embedding = tf.einsum("ij,jk->ijk", word_prior, semantic_embedding_map)
 
-      semantic_memory = tf.einsum("ijk,jl->ilk", masked_embedding, word_hasher)
+        with tf.variable_scope("word_hash"):
+          word_hash_map = tf.get_variable(
+              name="word_hash_map",
+              shape=[FLAGS.vocab_size, FLAGS.semantic_attention_word_hash_depth],
+              initializer=initializer)
+          word_hasher = tf.nn.softmax(word_hash_map)
+
+        semantic_memory = tf.einsum("ijk,jl->ilk", masked_embedding, word_hasher)
+      elif FLAGS.semantic_attention_type == "topk":
+        top_probs, top_indices = tf.nn.top_k(attributes_probs, 
+                                             FLAGS.semantic_attention_topk_word)
+        semantic_memory = tf.nn.embedding_lookup(embedding_map, top_indices)
+      else:
+        raise Exception("Unknown semantic_attention_type!")
 
       if mode == "inference":
         semantic_memory = tf.contrib.seq2seq.tile_batch(semantic_memory, multiplier=FLAGS.beam_width)
