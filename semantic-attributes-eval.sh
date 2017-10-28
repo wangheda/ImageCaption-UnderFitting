@@ -14,8 +14,8 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 MODEL_DIR="${DIR}/model/${model_name}"
 VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
 CHECKPOINT_PATH="${MODEL_DIR}/model.ckpt-$ckpt"
-OUTPUT_DIR="${MODEL_DIR}/model.ckpt-${ckpt}.inference"
-VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
+OUTPUT_DIR="${MODEL_DIR}/model.ckpt-${ckpt}.attributes"
+VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/attributes_reference.json"
 
 rm -rf $OUTPUT_DIR
 mkdir $OUTPUT_DIR
@@ -42,7 +42,7 @@ if [ ! -f ${OUTPUT_DIR}/out.json ]; then
 fi
 
 if [ ! -f ${OUTPUT_DIR}/out.eval ]; then
-  python ${DIR}/tools/eval/run_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE | tee ${OUTPUT_DIR}/out.eval
+  python ${DIR}/tools/eval/run_attributes_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE | tee ${OUTPUT_DIR}/out.eval
 fi
 
 echo eval result saved to ${OUTPUT_DIR}/out.eval
