@@ -235,3 +235,17 @@ class CaptionGenerator(object):
       final_captions = [item.sentence[1:-1] for item in complete_captions.extract(sort=True)]
 
     return final_captions
+
+  def predict_attributes(self, sess, encoded_image):
+    """Predict attributes on a single image.
+
+    Args:
+      sess: TensorFlow Session object.
+      encoded_image: An encoded image string.
+
+    Returns:
+      A list of attributes and probabilities sorted by descending score,.
+    """
+    top_n_attributes = sess.run(self.top_n_attributes, feed_dict={"image_feed:0": encoded_image})
+    attr_probs, attr_ids = top_n_attributes
+    return attr_ids[0], attr_probs[0]

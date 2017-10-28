@@ -41,7 +41,8 @@ tf.flags.DEFINE_string("attributes_file", "", "Text file containing the attribut
 tf.flags.DEFINE_string("input_file_pattern", "", "The pattern of images.")
 tf.flags.DEFINE_string("output", "", "The output file.")
 tf.flags.DEFINE_float("gpu_memory_fraction", 1.0, "Fraction of gpu memory used in inference.")
-
+tf.flags.DEFINE_boolean("predict_attributes_only", False,
+                        "If true, the model only predicts attributes")
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -80,14 +81,20 @@ def main(_):
           print(i)
       with tf.gfile.GFile(filename, "r") as f:
         image = f.read()
-      captions = generator.beam_search(sess, image)
       image_id = filename.split('.')[0]
       if "/" in image_id:
         image_id = image_id.split("/")[-1]
       result = {}
       result['image_id'] = image_id
-      sent = [vocab.id_to_word(w) for w in captions[0]]
-      result['caption'] = "".join(sent)
+      if FLAGS.predict_attributes_only:
+        attributes_ids, attributes_probs = generator.predict_attributes(sess, image)
+        attributes = [vocab.id_to_word(w) for w in attributes_ids]
+        result['attributes'] = " ".join(attributes)
+        result['probabilities'] = " ".join([str(prob) for prob in attributes_probs])
+      else:
+        captions = generator.beam_search(sess, image)
+        sent = [vocab.id_to_word(w) for w in captions[0]]
+        result['caption'] = "".join(sent)
       results.append(result)
   
   t_end = time.time()
