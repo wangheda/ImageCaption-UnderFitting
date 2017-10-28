@@ -177,9 +177,18 @@ def _process_chars(captions, vocab):
                 chars[ch] = 1
 
     # make char dict
-    chars = sorted(chars.items(), key=lambda x: x[1], reverse=True)
+    def mycmp(a, b):
+        if a[1] < b[1]:
+            return -1
+        elif a[1] > b[1]:
+            return 1
+        else:
+            return cmp(a[0], b[0])
+    chars = [(w,c) for w, c in chars.items() if c >= FLAGS.min_word_count]
+    chars.sort(cmp=mycmp, reverse=True)
+
     with tf.gfile.FastGFile(FLAGS.chars_output_file, "w") as f:
-        f.write("\n".join(["%s %d" % (w.encode("utf8"), c) for w, c in chars if c >= FLAGS.min_word_count]))
+        f.write("\n".join(["%s %d" % (w.encode("utf8"), c) for w,c in chars]))
     print("Wrote char file:", FLAGS.chars_output_file)
     chars = dict([(y, x) for x, y in enumerate(map(lambda x: x[0], chars))])
     chars = Vocabulary(chars, len(chars))
