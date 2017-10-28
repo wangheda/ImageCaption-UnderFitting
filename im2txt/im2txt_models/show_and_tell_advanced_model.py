@@ -195,7 +195,7 @@ class ShowAndTellAdvancedModel(object):
 
         semantic_memory = tf.einsum("ijk,jl->ilk", masked_embedding, word_hasher)
       elif FLAGS.semantic_attention_type == "topk":
-        top_probs, top_indices = tf.nn.top_k(attributes_probs, 
+        top_probs, top_indices = tf.nn.top_k(no_gradient_word_predictions, 
                                              FLAGS.semantic_attention_topk_word)
         semantic_memory = tf.nn.embedding_lookup(embedding_map, top_indices)
       else:
