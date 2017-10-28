@@ -21,6 +21,7 @@ from __future__ import print_function
 
 
 import tensorflow as tf
+FLAGS = tf.flags.FLAGS
 
 
 def parse_sequence_example(serialized, image_feature, caption_feature, flip_caption_feature=None):
@@ -218,3 +219,13 @@ def batch_with_dynamic_pad(images_and_captions,
     tf.summary.scalar("caption_length/batch_mean", tf.reduce_mean(lengths))
 
   return images, input_seqs, target_seqs, mask
+
+def caption_to_multi_labels(captions):
+  print("captions", captions)
+  def c2ml(caption):
+    unique_ids, _ = tf.unique(caption)
+    label = tf.reduce_sum(tf.one_hot(unique_ids, FLAGS.vocab_size), axis=0)
+    return label
+  labels = tf.map_fn(lambda x: c2ml(x), captions, dtype=tf.float32)
+  print("labels", labels)
+  return labels
