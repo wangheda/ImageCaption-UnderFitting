@@ -113,10 +113,8 @@ def inception_v3(images,
             original_net = tf.reshape(net, [tf.cast(shape[0],tf.int32), tf.cast(shape[1]*shape[2],tf.int32), tf.cast(shape[3],tf.int32)])
             net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
             net = slim.flatten(net, scope="flatten")
-
           elif use_box:
             net = tf.reshape(net, [tf.cast(shape[0],tf.int32), tf.cast(shape[1]*shape[2],tf.int32), tf.cast(shape[3],tf.int32)])
-
           else:
             net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
             net = slim.flatten(net, scope="flatten")
