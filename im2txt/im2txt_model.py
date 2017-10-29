@@ -75,6 +75,8 @@ tf.flags.DEFINE_boolean("use_box", False,
                         "Whether to remain position information in inception v3 output feature matrix")
 tf.flags.DEFINE_boolean("inception_return_tuple", False,
                         "Whether to remain position information in inception v3 output feature matrix, alongside with the origin pooled feature.")
+tf.flags.DEFINE_boolean("yet_another_inception", False,
+                        "If set true, return two inception output. See image_embedding for details.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -132,6 +134,7 @@ class Im2TxtModel(object):
 
     # Collection of variables from the inception submodel.
     self.inception_variables = []
+    self.ya_inception_variables = []
 
     # Function to restore the inception submodel from checkpoint.
     self.init_fn = None
@@ -263,6 +266,25 @@ class Im2TxtModel(object):
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
 
+    if FLAGS.yet_another_inception:
+      ya_inception_output = image_embedding.inception_v3(
+          self.images,
+          trainable=trainable,
+          scope="ya_InceptionV3",
+          is_training=self.is_training(),
+          use_box=FLAGS.use_box,
+          inception_return_tuple=FLAGS.inception_return_tuple)
+      self.ya_inception_variables = {v.op.name.lstrip("ya_"): v for v in 
+            tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="ya_InceptionV3")}
+
+      if type(inception_output) == tuple:
+        inception_output = inception_output + ya_inception_output
+      else:
+        inception_output = (inception_output, ya_inception_output)
+
+    print(self.inception_variables)
+    print(self.ya_inception_variables)
+
     self.image_model_output = inception_output
 
   def build_model(self):
@@ -340,12 +362,25 @@ class Im2TxtModel(object):
     """Sets up the function to restore inception variables from checkpoint."""
     if self.mode != "inference":
       # Restore inception variables only.
-      saver = tf.train.Saver(self.inception_variables)
+      if FLAGS.yet_another_inception:
+        saver = tf.train.Saver(self.inception_variables)
+        ya_saver = tf.train.Saver(self.ya_inception_variables)
 
-      def restore_fn(sess):
-        tf.logging.info("Restoring Inception variables from checkpoint file %s",
-                        FLAGS.inception_checkpoint_file)
-        saver.restore(sess, FLAGS.inception_checkpoint_file)
+        def restore_fn(sess):
+          tf.logging.info("Restoring Inception variables from checkpoint file %s",
+                          FLAGS.inception_checkpoint_file)
+          saver.restore(sess, FLAGS.inception_checkpoint_file)
+          tf.logging.info("Restoring Inception variables from checkpoint file %s for ya_InceptionV3",
+                          FLAGS.inception_checkpoint_file)
+          ya_saver.restore(sess, FLAGS.inception_checkpoint_file)
+
+      else:
+        saver = tf.train.Saver(self.inception_variables)
+
+        def restore_fn(sess):
+          tf.logging.info("Restoring Inception variables from checkpoint file %s",
+                          FLAGS.inception_checkpoint_file)
+          saver.restore(sess, FLAGS.inception_checkpoint_file)
 
       self.init_fn = restore_fn
 
