@@ -349,5 +349,3 @@ class Im2TxtModel(object):
     self.build_model()
     self.setup_inception_initializer()
     self.setup_global_step()
- 
-    
