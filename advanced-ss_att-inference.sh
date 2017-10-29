@@ -1,10 +1,9 @@
 #!/bin/bash
 
-model_name="show_and_tell_in_graph_model_finetune_with_decay"
-model="ShowAndTellInGraphModel"
-ckpt=840000
-num_processes=2
-gpu_fraction=0.46
+model_name="show_and_tell_advanced_model_attention_finetune_with_decay"
+model="ShowAndTellAdvancedModel"
+ckpt=580699
+num_processes=1
 device=0
 
 # the script directory
@@ -27,9 +26,12 @@ for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
     --vocab_file=${DIR}/data/word_counts.txt \
     --output=${OUTPUT_DIR}/part-${prefix}.json \
     --model=${model} \
-    --support_ingraph=True \
-    --gpu_memory_fraction=$gpu_fraction"
-done | parallel -j $num_processes
+    --inception_return_tuple=True \
+    --use_attention_wrapper=True \
+    --attention_mechanism=BahdanauAttention \
+    --num_lstm_layers=1 \
+    --support_ingraph=True"
+done | bash #parallel -j $num_processes
 
 cd ${DIR}
 

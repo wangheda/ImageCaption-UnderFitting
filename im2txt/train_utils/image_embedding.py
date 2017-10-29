@@ -37,7 +37,8 @@ def inception_v3(images,
                  batch_norm_params=None,
                  add_summaries=True,
                  scope="InceptionV3",
-                 use_box=False):
+                 use_box=False,
+                 inception_return_tuple=False):
   """Builds an Inception V3 subgraph for image embeddings.
 
   Args:
@@ -101,26 +102,31 @@ def inception_v3(images,
         with tf.variable_scope("logits"):
           shape = net.get_shape()
           print(net.get_shape().as_list())
-          if use_box:
-              net = slim.dropout(
-                  net,
-                  keep_prob=dropout_keep_prob,
-                  is_training=is_inception_model_training,
-                  scope="dropout")
-              net = tf.reshape(net, [tf.cast(shape[0],tf.int32), tf.cast(shape[1]*shape[2],tf.int32), tf.cast(shape[3],tf.int32)])
-          else:
-              net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
 
-              net = slim.dropout(
-                  net,
-                  keep_prob=dropout_keep_prob,
-                  is_training=is_inception_model_training,
-                  scope="dropout")
-              net = slim.flatten(net, scope="flatten")
+          net = slim.dropout(
+              net,
+              keep_prob=dropout_keep_prob,
+              is_training=is_inception_model_training,
+              scope="dropout")
+
+          if inception_return_tuple:
+            original_net = tf.reshape(net, [tf.cast(shape[0],tf.int32), tf.cast(shape[1]*shape[2],tf.int32), tf.cast(shape[3],tf.int32)])
+            net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
+            net = slim.flatten(net, scope="flatten")
+
+          elif use_box:
+            net = tf.reshape(net, [tf.cast(shape[0],tf.int32), tf.cast(shape[1]*shape[2],tf.int32), tf.cast(shape[3],tf.int32)])
+
+          else:
+            net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
+            net = slim.flatten(net, scope="flatten")
 
   # Add summaries.
   if add_summaries:
     for v in end_points.values():
       tf.contrib.layers.summaries.summarize_activation(v)
 
-  return net
+  if inception_return_tuple:
+    return net, original_net
+  else:
+    return net

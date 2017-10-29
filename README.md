@@ -69,6 +69,14 @@ Then, set the model name and checkpoint number in `eval.sh` and run:
 
 It will show and save the metrics.
 
+# Use lexical embedding
+
+In ShowAndTellAdvancedModel, you can augment word embedding with the embedding of the pos-tag of the word. The mapping between the word and the pos-tag should be generated beforehand via the following command:
+
+    bash scripts/build_postag_dict.sh
+
+This will take roughly an hour.
+
 # Important notice
 
 1. Commit as soon as your branch is merged with `origin/master` and tested, beware of silent merge conflict.

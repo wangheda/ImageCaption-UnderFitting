@@ -73,6 +73,10 @@ tf.flags.DEFINE_boolean("support_flip", False,
                         "the SequenceExample should contains feature key 'image/flip_caption_ids'")
 tf.flags.DEFINE_boolean("use_box", False,
                         "Whether to remain position information in inception v3 output feature matrix")
+tf.flags.DEFINE_boolean("inception_return_tuple", False,
+                        "Whether to remain position information in inception v3 output feature matrix, alongside with the origin pooled feature.")
+tf.flags.DEFINE_boolean("yet_another_inception", False,
+                        "If set true, return two inception output. See image_embedding for details.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -130,6 +134,7 @@ class Im2TxtModel(object):
 
     # Collection of variables from the inception submodel.
     self.inception_variables = []
+    self.ya_inception_variables = []
 
     # Function to restore the inception submodel from checkpoint.
     self.init_fn = None
@@ -256,9 +261,29 @@ class Im2TxtModel(object):
         self.images,
         trainable=trainable,
         is_training=self.is_training(),
-        use_box=FLAGS.use_box)
+        use_box=FLAGS.use_box,
+        inception_return_tuple=FLAGS.inception_return_tuple)
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
+
+    if FLAGS.yet_another_inception:
+      ya_inception_output = image_embedding.inception_v3(
+          self.images,
+          trainable=trainable,
+          scope="ya_InceptionV3",
+          is_training=self.is_training(),
+          use_box=FLAGS.use_box,
+          inception_return_tuple=FLAGS.inception_return_tuple)
+      self.ya_inception_variables = {v.op.name.lstrip("ya_"): v for v in 
+            tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="ya_InceptionV3")}
+
+      if type(inception_output) == tuple:
+        inception_output = inception_output + ya_inception_output
+      else:
+        inception_output = (inception_output, ya_inception_output)
+
+    print(self.inception_variables)
+    print(self.ya_inception_variables)
 
     self.image_model_output = inception_output
 
@@ -286,6 +311,7 @@ class Im2TxtModel(object):
           initializer = self.initializer,
           mode = self.mode,
           target_seqs = self.target_seqs,
+          global_step = self.global_step,
           input_mask = self.input_mask)
 
     # loss
@@ -307,6 +333,19 @@ class Im2TxtModel(object):
                           tf.reduce_sum(weights),
                           name="batch_loss")
       tf.losses.add_loss(batch_loss)
+
+      if "word_predictions" in outputs:
+        word_predictions = outputs["word_predictions"]
+        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
+        word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
+                                                            logits=word_predictions)
+        word_loss = tf.div(tf.reduce_sum(word_loss), 
+                           reduce(lambda x,y: x*y, word_loss.get_shape().as_list()),
+                           name="word_loss")
+        tf.losses.add_loss(word_loss)
+        tf.summary.scalar("losses/word_loss", word_loss)
+        self.word_loss = word_loss
+
       total_loss = tf.losses.get_total_loss()
 
       # Add summaries.
@@ -323,12 +362,25 @@ class Im2TxtModel(object):
     """Sets up the function to restore inception variables from checkpoint."""
     if self.mode != "inference":
       # Restore inception variables only.
-      saver = tf.train.Saver(self.inception_variables)
+      if FLAGS.yet_another_inception:
+        saver = tf.train.Saver(self.inception_variables)
+        ya_saver = tf.train.Saver(self.ya_inception_variables)
 
-      def restore_fn(sess):
-        tf.logging.info("Restoring Inception variables from checkpoint file %s",
-                        FLAGS.inception_checkpoint_file)
-        saver.restore(sess, FLAGS.inception_checkpoint_file)
+        def restore_fn(sess):
+          tf.logging.info("Restoring Inception variables from checkpoint file %s",
+                          FLAGS.inception_checkpoint_file)
+          saver.restore(sess, FLAGS.inception_checkpoint_file)
+          tf.logging.info("Restoring Inception variables from checkpoint file %s for ya_InceptionV3",
+                          FLAGS.inception_checkpoint_file)
+          ya_saver.restore(sess, FLAGS.inception_checkpoint_file)
+
+      else:
+        saver = tf.train.Saver(self.inception_variables)
+
+        def restore_fn(sess):
+          tf.logging.info("Restoring Inception variables from checkpoint file %s",
+                          FLAGS.inception_checkpoint_file)
+          saver.restore(sess, FLAGS.inception_checkpoint_file)
 
       self.init_fn = restore_fn
 
@@ -344,8 +396,8 @@ class Im2TxtModel(object):
 
   def build(self):
     """Creates all ops for training and evaluation."""
+    self.setup_global_step()
     self.build_inputs()
     self.get_image_output()
     self.build_model()
     self.setup_inception_initializer()
-    self.setup_global_step()
