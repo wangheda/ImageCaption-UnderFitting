@@ -30,7 +30,7 @@ from train_utils import image_embedding
 from train_utils import image_processing
 from train_utils import inputs as input_ops
 
-tf.flags.DEFINE_string("model", "ShowAndTellModel",
+tf.flags.DEFINE_string("model", "ShowAttendTellModel",
                         "The model.")
 
 tf.flags.DEFINE_integer("vocab_size", 12000,
@@ -71,8 +71,12 @@ tf.flags.DEFINE_boolean("support_ingraph", False,
 tf.flags.DEFINE_boolean("support_flip", False,
                         "Whether the model supports flip image. If the model supports it, "
                         "the SequenceExample should contains feature key 'image/flip_caption_ids'")
-tf.flags.DEFINE_boolean("use_box", False,
+tf.flags.DEFINE_boolean("use_box", True,
                         "Whether to remain position information in inception v3 output feature matrix")
+tf.flags.DEFINE_boolean("finetune", False,
+                        "Whether to finetune the model")
+tf.flags.DEFINE_string("train_checkpoint_path", "",
+                       "model path for finetune to load")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -319,7 +323,7 @@ class Im2TxtModel(object):
       self.target_cross_entropy_losses = losses  # Used in evaluation.
       self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
 
-  def setup_inception_initializer(self):
+  def setup_inception_initializer(self, finetune=False):
     """Sets up the function to restore inception variables from checkpoint."""
     if self.mode != "inference":
       # Restore inception variables only.
@@ -330,7 +334,16 @@ class Im2TxtModel(object):
                         FLAGS.inception_checkpoint_file)
         saver.restore(sess, FLAGS.inception_checkpoint_file)
 
-      self.init_fn = restore_fn
+      def restore_finetune(sess):
+        tf.logging.info("Restoring model form checkpoint:%s", FLAGS.train_checkpoint_path)
+        saver.restore(sess, FLAGS.train_checkpoint_path)
+        tf.logging.info("Successfully loaded checkpoint: %s",
+                        os.path.basename(FLAGS.train_checkpoint_path))
+
+      if finetune:
+        self.init_fn = restore_finetune
+      else:
+        self.init_fn = restore_fn
 
   def setup_global_step(self):
     """Sets up the global step Tensor."""
@@ -347,5 +360,7 @@ class Im2TxtModel(object):
     self.build_inputs()
     self.get_image_output()
     self.build_model()
-    self.setup_inception_initializer()
+    self.setup_inception_initializer(finetune=FLAGS.finetune)
     self.setup_global_step()
+ 
+    

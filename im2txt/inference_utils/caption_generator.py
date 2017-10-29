@@ -30,7 +30,7 @@ import numpy as np
 class Caption(object):
   """Represents a complete or partial caption."""
 
-  def __init__(self, sentence, state, logprob, score, metadata=None):
+  def __init__(self, sentence, state, review_state, logprob, score, metadata=None):
     """Initializes the Caption.
 
     Args:
@@ -43,6 +43,7 @@ class Caption(object):
     """
     self.sentence = sentence
     self.state = state
+    self.review_state = review_state
     self.logprob = logprob
     self.score = score
     self.metadata = metadata
@@ -171,11 +172,12 @@ class CaptionGenerator(object):
     else:
       # The original out-graph inference
       # Feed in the image to get the initial state.
-      initial_state = self.model.feed_image(sess, encoded_image)
+      initial_state, initial_review_state = self.model.feed_image(sess, encoded_image, use_attention=True)
 
       initial_beam = Caption(
           sentence=[self.vocab.start_id],
           state=initial_state[0],
+          review_state=initial_review_state[0],
           logprob=0.0,
           score=0.0,
           metadata=[""])
@@ -189,16 +191,19 @@ class CaptionGenerator(object):
         partial_captions.reset()
         input_feed = np.array([c.sentence[-1] for c in partial_captions_list])
         state_feed = np.array([c.state for c in partial_captions_list])
+        review_state_feed = np.array([c.review_state for c in partial_captions_list])
 
-        softmax, new_states, metadata = self.model.inference_step(sess,
+        softmax, new_states,new_review_states, metadata = self.model.inference_step(sess,
                                                                   input_feed,
                                                                   state_feed,
+                                                                  review_state_feed,
                                                                   encoded_image=encoded_image,
-                                                                  use_attention=False)
+                                                                  use_attention=True)
 
         for i, partial_caption in enumerate(partial_captions_list):
           word_probabilities = softmax[i]
           state = new_states[i]
+          review_state = new_review_states[i]
           # For this partial caption, get the beam_size most probable next words.
           words_and_probs = list(enumerate(word_probabilities))
           words_and_probs.sort(key=lambda x: -x[1])
@@ -217,10 +222,10 @@ class CaptionGenerator(object):
             if w == self.vocab.end_id:
               if self.length_normalization_factor > 0:
                 score /= len(sentence)**self.length_normalization_factor
-              beam = Caption(sentence, state, logprob, score, metadata_list)
+              beam = Caption(sentence, state, review_state, logprob, score, metadata_list)
               complete_captions.push(beam)
             else:
-              beam = Caption(sentence, state, logprob, score, metadata_list)
+              beam = Caption(sentence, state, review_state, logprob, score, metadata_list)
               partial_captions.push(beam)
         if partial_captions.size() == 0:
           # We have run out of partial candidates; happens when beam_size = 1.
