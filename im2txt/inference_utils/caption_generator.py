@@ -30,7 +30,7 @@ import numpy as np
 class Caption(object):
   """Represents a complete or partial caption."""
 
-  def __init__(self, sentence, state, review_state, logprob, score, metadata=None):
+  def __init__(self, sentence, state, logprob, score, metadata=None, review_state=None):
     """Initializes the Caption.
 
     Args:
@@ -177,10 +177,10 @@ class CaptionGenerator(object):
       initial_beam = Caption(
           sentence=[self.vocab.start_id],
           state=initial_state[0],
-          review_state=initial_review_state[0],
           logprob=0.0,
           score=0.0,
-          metadata=[""])
+          metadata=[""],
+          review_state=initial_review_state[0])
       partial_captions = TopN(self.beam_size)
       partial_captions.push(initial_beam)
       complete_captions = TopN(self.beam_size)
@@ -193,12 +193,12 @@ class CaptionGenerator(object):
         state_feed = np.array([c.state for c in partial_captions_list])
         review_state_feed = np.array([c.review_state for c in partial_captions_list])
 
-        softmax, new_states,new_review_states, metadata = self.model.inference_step(sess,
+        softmax, new_states, metadata, new_review_states = self.model.inference_step(sess,
                                                                   input_feed,
                                                                   state_feed,
-                                                                  review_state_feed,
                                                                   encoded_image=encoded_image,
-                                                                  use_attention=True)
+                                                                  use_attention=True,
+                                                                  state_review_feed=review_state_feed)
 
         for i, partial_caption in enumerate(partial_captions_list):
           word_probabilities = softmax[i]
@@ -222,10 +222,10 @@ class CaptionGenerator(object):
             if w == self.vocab.end_id:
               if self.length_normalization_factor > 0:
                 score /= len(sentence)**self.length_normalization_factor
-              beam = Caption(sentence, state, review_state, logprob, score, metadata_list)
+              beam = Caption(sentence, state, logprob, score, metadata_list, review_state)
               complete_captions.push(beam)
             else:
-              beam = Caption(sentence, state, review_state, logprob, score, metadata_list)
+              beam = Caption(sentence, state, logprob, score, metadata_list, review_state)
               partial_captions.push(beam)
         if partial_captions.size() == 0:
           # We have run out of partial candidates; happens when beam_size = 1.

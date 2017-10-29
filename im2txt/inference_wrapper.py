@@ -52,7 +52,7 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
                                  feed_dict={"image_feed:0": encoded_image})
         return initial_state, None
 
-  def inference_step(self, sess, input_feed, state_feed, state_review_feed, encoded_image=None, use_attention=False):
+  def inference_step(self, sess, input_feed, state_feed, encoded_image=None, use_attention=False, state_review_feed=None):
     # the image_feed need to be used if attention model is used
     if use_attention:
         softmax_output, state_output, state_review_output = sess.run(
@@ -63,7 +63,7 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
                 "lstm/state_feed:0": state_feed,
                 "lstm_review/state_review_feed:0": state_review_feed,
             })
-        return softmax_output, state_output, state_review_output, None
+        return softmax_output, state_output, None, state_review_output
     else:
         softmax_output, state_output = sess.run(
             fetches=["softmax:0", "lstm/state:0"],
