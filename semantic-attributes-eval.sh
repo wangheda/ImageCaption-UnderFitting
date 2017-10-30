@@ -1,9 +1,9 @@
 #!/bin/bash
 
-model_name="semantic_attention_model_attr_only_wb"
+model_name="semantic_attention_model_attr_only"
 model="SemanticAttentionModel"
 #ckpt=520000
-ckpt=122536
+ckpt=180973
 num_processes=3
 gpu_fraction=0.3
 device=0
@@ -16,7 +16,7 @@ VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/captio
 CHECKPOINT_PATH="${MODEL_DIR}/model.ckpt-$ckpt"
 OUTPUT_DIR="${MODEL_DIR}/model.ckpt-${ckpt}.attributes"
 VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/attributes_reference.json"
-
+ATTRIBUTES_FILE="${DIR}/data/attributes.txt"
 rm -rf $OUTPUT_DIR
 mkdir $OUTPUT_DIR
 
@@ -32,6 +32,7 @@ for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
         --output=${OUTPUT_DIR}/part-${prefix}.json \
         --model=${model} \
         --predict_attributes_only=True \
+        --attributes_top_k=20 \
         --gpu_memory_fraction=$gpu_fraction"
   fi
 done | parallel -j $num_processes
@@ -42,7 +43,7 @@ if [ ! -f ${OUTPUT_DIR}/out.json ]; then
 fi
 
 if [ ! -f ${OUTPUT_DIR}/out.eval ]; then
-  python ${DIR}/tools/eval/run_attributes_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE | tee ${OUTPUT_DIR}/out.eval
+  python ${DIR}/tools/eval/run_attributes_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE --attr $ATTRIBUTES_FILE | tee ${OUTPUT_DIR}/out.eval
 fi
 
 echo eval result saved to ${OUTPUT_DIR}/out.eval
