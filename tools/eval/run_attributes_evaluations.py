@@ -97,11 +97,11 @@ def compute_map(json_predictions_file, reference_file, attributes_file, k_list =
     reference_dict = {}
     for sample in reference:
         image_id = sample['image_id']
-        captions = sample['captions']
+        captions = sample['caption']
         reference_dict[image_id] = captions
     input.close()
 
-    input = codec.open(attributes_file, 'r', 'utf-8')
+    input = codecs.open(attributes_file, 'r', 'utf-8')
     attributes = [line.split(" ")[0] for line in input.readlines()]
     attributes = set(attributes)
     input.close()
@@ -113,11 +113,11 @@ def compute_map(json_predictions_file, reference_file, attributes_file, k_list =
     for pred in predictions:
         predicted_attributes = pred['attributes']
         predicted_attributes = [attr for attr in predicted_attributes.split(" ") if attr]
-        refs = reference_dict[pred['image_id']]
+        refs = reference_dict[pred['image_id'] + ".jpg"]
         for ref in refs:
             ref = ref.split(" ")
             ref = [word for word in ref if word in attributes]
-            ref_attributes = list(set(reference_dict))
+            ref_attributes = list(set(ref))
             for k in k_list:
                 map_scores[k].append(apk(ref_attributes, predicted_attributes, k))
 
@@ -133,11 +133,13 @@ def main():
                         help=' JSON containing submit sentences.')
     parser.add_argument("-ref", "--ref", type=str,
                         help=' JSON references.')
+    parser.add_argument("-attr", "--attr", type=str,
+                        help='attributes file.')
     args = parser.parse_args()
 
     json_predictions_file = args.submit
     reference_file = args.ref
-    print compute_m1(json_predictions_file, reference_file)
+    print compute_map(json_predictions_file, reference_file, args.attr)
 
 
 if __name__ == "__main__":

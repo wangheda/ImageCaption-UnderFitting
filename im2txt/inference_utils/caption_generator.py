@@ -246,6 +246,6 @@ class CaptionGenerator(object):
     Returns:
       A list of attributes and probabilities sorted by descending score,.
     """
-    top_n_attributes = sess.run(self.top_n_attributes, feed_dict={"image_feed:0": encoded_image})
+    top_n_attributes = sess.run(self.model.top_n_attributes, feed_dict={"image_feed:0": encoded_image})
     attr_probs, attr_ids = top_n_attributes
     return attr_ids[0], attr_probs[0]
