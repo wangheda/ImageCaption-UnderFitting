@@ -72,9 +72,6 @@ tf.flags.DEFINE_boolean("only_attributes_loss", False,
                         "Train only use aux_loss or not.")
 tf.flags.DEFINE_string("vocab_file", "",
                        "Text file containing the vocabulary.")
-tf.flags.DEFINE_string("attributes_file", "",
-                       "Text file containing the concept words.")
-
 
 import im2txt_model
 

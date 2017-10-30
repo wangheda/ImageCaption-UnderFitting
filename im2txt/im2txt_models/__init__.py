@@ -13,8 +13,6 @@ tf.flags.DEFINE_integer("beam_width", 3,
                         "The beam width")
 tf.flags.DEFINE_integer("max_caption_length", 20,
                         "The max caption length for beam search decoding")
-tf.flags.DEFINE_integer("attributes_top_k", 10,
-                        "The number of attributes to generate attention memory")
 
 # flags for advanced model
 tf.flags.DEFINE_boolean("use_scheduled_sampling", False,
@@ -46,6 +44,13 @@ tf.flags.DEFINE_boolean("output_attention", False,
                         "If the attention mechanism used in attention wrapper is Bahdanau, "
                         "this value should be false. If the mechanism is Lung, this value should be set true.")
 
+# flags for semantic attention model
+tf.flags.DEFINE_integer("attributes_top_k", 15,
+                        "The number of attributes to generate attention memory")
+tf.flags.DEFINE_string("attributes_file", "data/attributes.txt", "Text file containing the attributes.")
+tf.flags.DEFINE_boolean("use_idf_weighted_attribute_loss", False,
+                        "Whether to use idf weighted attributes loss during training.")
+tf.flags.DEFINE_string("word_idf_file", "data/word_idf.txt", "Text file containing the word idf scores.")
 
 # models
 from show_and_tell_model import ShowAndTellModel

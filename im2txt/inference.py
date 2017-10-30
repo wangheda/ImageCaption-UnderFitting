@@ -37,7 +37,6 @@ tf.flags.DEFINE_string("checkpoint_path", "",
                        "Model checkpoint file or directory containing a "
                        "model checkpoint file.")
 tf.flags.DEFINE_string("vocab_file", "", "Text file containing the vocabulary.")
-tf.flags.DEFINE_string("attributes_file", "", "Text file containing the attributes.")
 tf.flags.DEFINE_string("input_file_pattern", "", "The pattern of images.")
 tf.flags.DEFINE_string("output", "", "The output file.")
 tf.flags.DEFINE_float("gpu_memory_fraction", 1.0, "Fraction of gpu memory used in inference.")

@@ -278,7 +278,7 @@ class Im2TxtModel(object):
       self.target_cross_entropy_losses (training and eval only)
       self.target_cross_entropy_loss_weights (training and eval only)
     """
-    
+
     caption_model_fn = find_class_by_name(FLAGS.model, [im2txt_models])
     caption_model = caption_model_fn()
 
@@ -317,8 +317,12 @@ class Im2TxtModel(object):
           labels=attributes_targets,
           logits=attributes_logits)
 
-        attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_mask)),
-                                 tf.reduce_sum(attributes_mask),
+        if FLAGS.use_idf_weighted_attribute_loss:
+          attributes_loss_mask = outputs["idf_weighted_mask"]
+        else:
+          attributes_loss_mask = attributes_mask
+        attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_loss_mask)),
+                                 tf.reduce_sum(attributes_loss_mask),
                                  name="attributes_loss")
 
         tf.losses.add_loss(attributes_loss)

@@ -24,7 +24,7 @@ import tensorflow as tf
 import im2txt_model
 from inference_utils import inference_wrapper_base
 
-FLAGS = tf.app.flags.FLAGS
+
 
 class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
   """Model wrapper class for performing inference with a Im2TxtModel."""

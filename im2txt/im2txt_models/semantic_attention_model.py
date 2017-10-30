@@ -29,7 +29,7 @@ class SemanticAttentionModel(object):
                    mode="train", target_seqs=None, input_mask=None,
                    **unused_params):
     
-    attributes_mask = self.build_attributes_mask()
+    attributes_mask, idf_weighted_mask = self.build_attributes_mask()
 
     # Map image model output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
@@ -167,7 +167,8 @@ class SemanticAttentionModel(object):
       logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
       return {"logits": logits, 
               "attributes_logits": attributes_logits, 
-              "attributes_mask": attributes_mask}
+              "attributes_mask": attributes_mask,
+              "idf_weighted_mask": idf_weighted_mask}
     else:
       return {"bs_results": outputs, "top_n_attributes": (top_attributes_probs, top_attributes_indices)}
 
@@ -178,19 +179,36 @@ class SemanticAttentionModel(object):
     input = open(FLAGS.attributes_file)
     attributes = set([line.split(" ")[0] for line in input.readlines()])
     input.close()
+    idf_weighted_mask = None
+    if FLAGS.use_idf_weighted_attribute_loss:
+      idf_mask = []
+      input = open(FLAGS.word_idf_file)
+      word_idf_dict = {}
+      for line in input.readlines():
+        word, idf = line.strip().split(" ")
+        word_idf_dict[word] = idf
+      input.close()
     index = 0
     mask = []
     for word in vocab:
       if word in attributes:
         mask.append(1.0)
+        if FLAGS.use_idf_weighted_attribute_loss:
+          idf_mask.append(word_idf_dict[word])
         index += 1
         if index == attributes_num:
           break
       else:
         mask.append(0)
+        if FLAGS.use_idf_weighted_attribute_loss:
+          idf_mask.append(0)
 
     attributes_mask = tf.Variable(mask,
                                    trainable=False,
                                    name="attributes_mask")
-    return attributes_mask
+    if FLAGS.use_idf_weighted_attribute_loss:
+      idf_weighted_mask = tf.Variable(mask,
+                                     trainable=False,
+                                     name="idf_weighted_mask")
+    return attributes_mask, idf_weighted_mask
 
