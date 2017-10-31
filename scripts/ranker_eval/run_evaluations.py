@@ -26,7 +26,7 @@ from coco_caption.pycxtools.coco import COCO
 from coco_caption.pycxevalcap.eval import COCOEvalCap
 
 
-def compute_m1(json_predictions_file, reference_file):
+def compute_m1(json_predictions_file, reference_file, output_file):
     """Compute m1_score"""
     m1_score = {}
     m1_score['error'] = 0
@@ -43,13 +43,28 @@ def compute_m1(json_predictions_file, reference_file):
         # evaluate results
         print >> sys.stderr, "evaluating"
         coco_eval.evaluate()
-    except Exception:
-        m1_score['error'] = 1
+    except Exception as e:
+        print e
+        #m1_score['error'] = 1
     else:
         # print output evaluation scores
         for metric, score in coco_eval.eval.items():
             print 'Eval/%s: %.3f'%(metric, score)
             m1_score[metric] = score
+        
+        with open(output_file, 'w') as Fo:
+            for imgId, imgRes in coco_eval.imgToEval.items():
+                imgFilename = coco.imgToFilename[imgId]
+                imgCaption = coco.imgToCaption[imgFilename]
+                weight_B4 = 8.2
+                weight_C = 2.4
+                weight_M = 20.2
+                weight_R = 12.6
+                score = (weight_B4 * imgRes['Bleu_4'] + \
+                        weight_C * imgRes['CIDEr'] + \
+                        weight_M * imgRes['METEOR'] + \
+                        weight_R * imgRes['ROUGE_L'] ) / 4.0
+                print >> Fo, "\t".join([imgFilename, imgCaption.encode("utf8"), str(float(score))])
     return m1_score
 
 
@@ -60,11 +75,14 @@ def main():
                         help=' JSON containing submit sentences.')
     parser.add_argument("-ref", "--ref", type=str,
                         help=' JSON references.')
+    parser.add_argument("-output", "--output", type=str,
+                        help=' CSV output (basename, caption, score).')
     args = parser.parse_args()
 
     json_predictions_file = args.submit
     reference_file = args.ref
-    print compute_m1(json_predictions_file, reference_file)
+    output_file = args.output
+    print compute_m1(json_predictions_file, reference_file, output_file)
 
 
 if __name__ == "__main__":

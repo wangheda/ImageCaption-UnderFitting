@@ -73,6 +73,8 @@ class COCO:
         self.dataset = {}
         self.anns = []
         self.imgToAnns = {}
+        self.imgToFilename = {}
+        self.imgToCaption = {}
         self.catToImgs = {}
         self.imgs = []
         self.cats = []
@@ -100,6 +102,7 @@ class COCO:
         image2hash = {}
         for img in self.dataset['images']:
             imgs[img['id']] = img
+            self.imgToFilename[img['id']] = img['file_name']
             if img['file_name'] in image2hash:
                 assert image2hash[img['file_name']] == img['id']
             else:
@@ -322,6 +325,8 @@ class COCO:
         for ann in anns:
             assert ann['image_id'] != '','image_id must have a name'
             assert ann['caption'] != '', 'caption must be a string'
+
+            self.imgToCaption[ann['image_id']] = ann['caption']
 
             w = jieba.cut(ann['caption'].strip().replace('。',''), cut_all=False)
             p = ' '.join(w)
