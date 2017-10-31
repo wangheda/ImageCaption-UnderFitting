@@ -53,7 +53,7 @@ for part in TRAIN VALIDATE; do
         [ ! -d $tmp_dir ] && mkdir -p $tmp_dir
         [ ! -f ${tmp_dir}/model ] && echo $model > ${tmp_dir}/model
 
-        for candidate in 1 2 3; do
+        for candidate in 0 1 2; do
           input_file="${origin_dir}/${part}/part-${c}.json"
           output_file="${tmp_dir}/${part}/part-${c}.json.no-${candidate}"
 
