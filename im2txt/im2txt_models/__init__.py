@@ -80,3 +80,4 @@ from show_and_tell_in_graph_model import ShowAndTellInGraphModel
 from show_and_tell_advanced_model import ShowAndTellAdvancedModel
 from show_attend_tell_model import ShowAttendTellModel
 from review_networks import ReviewnetworkModel
+from review_networks_in_graph import ReviewNetworkModelInGraph
