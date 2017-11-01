@@ -132,9 +132,11 @@ for part in VALIDATE TRAIN; do
   if [ $part == "TRAIN" ]; then
     IMAGE_DIR=$TRAIN_IMAGE_DIR
     LIST="0 1 2 3 4 5 6 7 8 9 a b c d e f"
+    SHARD=10
   else
     IMAGE_DIR=$VALIDATE_IMAGE_DIR
     LIST="0 2 4 6 8 a c e"
+    SHARD=1
   fi
 
   image_dir=$IMAGE_DIR
@@ -143,6 +145,7 @@ for part in VALIDATE TRAIN; do
   maxlen=30
   strategy1=10
   strategy2=10
+  num_shards=$SHARD
 
   for c in $LIST; do
     refcsv_file=${ref_dir}/refcsv-${part}-${c}
@@ -160,15 +163,17 @@ for part in VALIDATE TRAIN; do
 
     marker_file=${base_dir}/${hash_dir1}/marker-${part}-${c}
     if [ ! -f $marker_file ]; then
-      python ${DIR}/build_image_pos_neg_tfrecords.py \
+      CUDA_VISIBLE_DEVICES="" python ${DIR}/build_image_pos_neg_tfrecords.py \
+              --word_counts_input_file=${DIR}/../data/word_counts.txt \
               --input_file=$triplets_file \
+              --num_shards=$num_shards \
+              --maxlen=$maxlen \
+              --lines_per_image=$(($strategy1 + $strategy2)) \
               --image_dir=$image_dir \
-              --output_prefix="rankertrain-${part}-${c}-" \
-              --output_dir=$output_dir
-      touch $marker_file
+              --output_prefix="rankertrain-${part}-${c}" \
+              --output_dir=$output_dir \
+      && touch $marker_file
     fi
-
-    exit 1
   done
 
 done
