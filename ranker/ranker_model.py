@@ -169,7 +169,7 @@ class RankerModel(object):
       self.pos_seqlens = pos_seqlens[:self.batch_size]
       self.neg_captions = neg_captions[:self.batch_size,:]
       self.neg_seqlens = neg_seqlens[:self.batch_size]
-      print(images, pos_captions, pos_seqlens, neg_captions, neg_seqlens)
+      print(self.images, self.pos_captions, self.pos_seqlens, self.neg_captions, self.neg_seqlens)
 
   def get_image_output(self):
     if self.mode == "inference":
@@ -189,6 +189,8 @@ class RankerModel(object):
       self.image_model_output = magic_concat(inception_output)
     else:
       self.image_model_output = inception_output
+
+    print(self.image_model_output)
 
 
   def get_text_output(self):

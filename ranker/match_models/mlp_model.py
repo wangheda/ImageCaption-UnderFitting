@@ -47,12 +47,21 @@ class MlpModel(object):
           biases_initializer=None,
           scope=scope)
 
+    with tf.variable_scope("text_embedding") as scope:
+      text_embeddings = tf.contrib.layers.fully_connected(
+          inputs=text_input,
+          num_outputs=FLAGS.embedding_size,
+          activation_fn=None,
+          weights_initializer=initializer,
+          biases_initializer=None,
+          scope=scope)
+
     num_units = map(lambda x: int(x.strip()), FLAGS.mlp_num_units.split(","))
     num_layers = FLAGS.mlp_num_layers
 
     assert num_layers == len(num_units)
 
-    hidden_layer = image_input
+    hidden_layer = tf.concat([image_embeddings, text_embeddings], axis=1)
     for num in num_units:
       hidden_layer = tf.contrib.layers.fully_connected(
           inputs=hidden_layer,

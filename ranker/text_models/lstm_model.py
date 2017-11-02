@@ -10,12 +10,6 @@ beam_width = 3
 max_caption_length = 20
 """
 
-def magic_concat(tensor_or_list, axis=0):
-  if type(tensor_or_list) in [list, tuple]:
-    return map(magic_concat, tensor_or_list)
-  else:
-    return tf.concat([tensor_or_list, tensor_or_list], axis=axis)
-
 def get_shape(tensor):
   """Returns static shape if available and dynamic shape otherwise."""
   static_shape = tensor.shape.as_list()
@@ -82,8 +76,11 @@ class LstmModel(object):
                           dtype=tf.float32,
                           swap_memory=True,
                       )
-    flat_state = magic_concat(state, axis=1)
-    flat_output = magic_concat(output, axis=2)
-    return flat_state, flat_output
+    if FLAGS.num_lstm_layers > 1:
+      flat_state = tf.concat(map(lambda x: x.c, state), axis=1)
+    else:
+      flat_state = state.c
+    print flat_state, output
+    return flat_state, output
     
 
