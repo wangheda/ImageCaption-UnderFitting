@@ -8,9 +8,9 @@ TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 
 model=SemanticAttentionModel
-model_dir_name=semantic_attention_model_join
-original_model_dir_name=semantic_attention_model_attr_only
-start_ckpt=180973
+model_dir_name=semantic_attention_model_join_idf_weighted
+original_model_dir_name=semantic_attention_model_attr_only_idf_weighted
+start_ckpt=200000
 
 # copy the starting checkpoint
 if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
@@ -19,17 +19,18 @@ if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
   echo "model_checkpoint_path: \"${MODEL_DIR}/${model_dir_name}/model.ckpt-${start_ckpt}\"" > ${MODEL_DIR}/${model_dir_name}/checkpoint
 fi
 
-cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
+cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
   --support_ingraph=True \
-  --number_of_steps=800000 \
+  --number_of_steps=600000 \
   --initial_learning_rate=4.6 \
   --learning_rate_decay_factor=0.6 \
   --attributes_top_k=15 \
   --train_inception_with_decay=True \
   --vocab_file="${DIR}/data/word_counts.txt" \
-  --attributes_file="${DIR}/data/attributes.txt"
+  --attributes_file="${DIR}/data/attributes.txt" \
+  --word_idf_file="${DIR}/data/word_idf.txt"
 
