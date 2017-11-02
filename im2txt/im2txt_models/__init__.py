@@ -36,6 +36,8 @@ tf.flags.DEFINE_boolean("use_attention_wrapper", False,
                         "Whether to use attention wrapper during training.")
 tf.flags.DEFINE_integer("num_lstm_layers", 1,
                         "The num of layers in lstm model")
+tf.flags.DEFINE_string("lstm_cell_type", "vanilla",
+                        "The type of lstm, options are: vanilla/highway")
 tf.flags.DEFINE_integer("num_attention_depth", 128,
                         "The num of atttention depth")
 tf.flags.DEFINE_string("attention_mechanism", "BahdanauAttention",
