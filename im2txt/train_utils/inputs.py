@@ -21,6 +21,7 @@ from __future__ import print_function
 
 
 import tensorflow as tf
+FLAGS = tf.flags.FLAGS
 
 
 def parse_sequence_example(serialized, image_feature, caption_feature, flip_caption_feature=None):
@@ -224,8 +225,15 @@ def caption_to_attributes_target(caption, mask):
   attributes_target = tf.reduce_sum(tf.one_hot(unique_ids, tf.shape(mask)[0]), axis=0) * mask
   return attributes_target
 
-
 def get_attributes_target(target_seq, mask):
   return tf.map_fn(lambda x: caption_to_attributes_target(x, mask), target_seq, dtype=tf.float32)
 
-
+def caption_to_multi_labels(captions):
+  print("captions", captions)
+  def c2ml(caption):
+    unique_ids, _ = tf.unique(caption)
+    label = tf.reduce_sum(tf.one_hot(unique_ids, FLAGS.vocab_size), axis=0)
+    return label
+  labels = tf.map_fn(lambda x: c2ml(x), captions, dtype=tf.float32)
+  print("labels", labels)
+  return labels

@@ -4,20 +4,11 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 INCEPTION_CHECKPOINT="${DIR}/pretrained_model/inception_v3/inception_v3.ckpt"
-TFRECORD_DIR="${DIR}/data/Aug_TFRecord_data"
+TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
-
 model=ShowAndTellAdvancedModel
-model_dir_name=show_and_tell_advanced_model_attention_finetune_with_decay_da
-original_model_dir_name=show_and_tell_advanced_model_attention_da
-start_ckpt=105000
 
-# copy the starting checkpoint
-if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
-  mkdir -p ${MODEL_DIR}/${model_dir_name}
-  cp ${MODEL_DIR}/${original_model_dir_name}/model.ckpt-${start_ckpt}.* ${MODEL_DIR}/${model_dir_name}/
-  echo "model_checkpoint_path: \"${MODEL_DIR}/${model_dir_name}/model.ckpt-${start_ckpt}\"" > ${MODEL_DIR}/${model_dir_name}/checkpoint
-fi
+model_dir_name=show_and_tell_advanced_model_vis_sem_attention
 
 cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
@@ -31,9 +22,10 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --use_attention_wrapper=True \
   --attention_mechanism=BahdanauAttention \
   --num_lstm_layers=1 \
+  --predict_words_via_image_output=True \
+  --use_semantic_attention=True \
+  --use_separate_embedding_for_semantic_attention=True \
+  --weight_semantic_memory_with_soft_prediction=True \
+  --semantic_attention_word_hash_depth=128 \
   --support_ingraph=True \
-  --support_flip=True \
-  --batch_size=30 \
-  --num_examples_per_epoch=210000 \
-  --train_inception_with_decay=True \
-  --number_of_steps=600000
+  --number_of_steps=105000

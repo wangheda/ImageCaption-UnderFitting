@@ -43,6 +43,35 @@ tf.flags.DEFINE_string("attention_mechanism", "BahdanauAttention",
 tf.flags.DEFINE_boolean("output_attention", False,
                         "If the attention mechanism used in attention wrapper is Bahdanau, "
                         "this value should be false. If the mechanism is Lung, this value should be set true.")
+tf.flags.DEFINE_boolean("predict_words_via_image_output", False,
+                        "If use semantic attention, then from which tensor the words are predicted.")
+tf.flags.DEFINE_boolean("predict_words_via_middle_layer", False,
+                        "If use semantic attention, then from which tensor the words are predicted. "
+                        "This one contains positional information.")
+tf.flags.DEFINE_boolean("use_semantic_attention", False,
+                        "Whether to use semantic attention during training.")
+tf.flags.DEFINE_string("semantic_attention_type", "wordhash",
+                        "Type of semantic attention during training, options are wordhash/topk.")
+tf.flags.DEFINE_integer("semantic_attention_topk_word", 20,
+                        "Number of top-K word selected in semantic attention during training.")
+tf.flags.DEFINE_boolean("use_separate_embedding_for_semantic_attention", False,
+                        "Whether to use different embedding matrix for semantic attention.")
+tf.flags.DEFINE_boolean("weight_semantic_memory_with_hard_prediction", False,
+                        "Choose the top K words and choose only these embeddings.")
+tf.flags.DEFINE_boolean("weight_semantic_memory_with_soft_prediction", False,
+                        "Use the prediction logits to choose the word embeddings used in attention.")
+tf.flags.DEFINE_integer("semantic_attention_word_hash_depth", 128,
+                        "Project the vocab_size of the word embedding memory to a lower dimension.")
+
+tf.flags.DEFINE_boolean("use_lexical_embedding", False,
+                        "If set true, use lexical mapping and embedding.")
+tf.flags.DEFINE_string("lexical_embedding_type", "postag",
+                        "The type of lexical embedding, comma-separated list of types, "
+                        "options are postag/char.")
+tf.flags.DEFINE_string("lexical_mapping_file", "data/word2postag.txt",
+                        "If set true, use lexical mapping and embedding, comma-separated list of filenames.")
+tf.flags.DEFINE_string("lexical_embedding_size", "32",
+                        "The dimension of lexical embedding, comma-separated list of sizes corresponded to lexical_embedding_type.")
 
 # flags for semantic attention model
 tf.flags.DEFINE_integer("attributes_top_k", 15,

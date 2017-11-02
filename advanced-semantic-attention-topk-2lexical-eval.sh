@@ -2,10 +2,11 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_in_graph_model_fromscratch"
+model_name="show_and_tell_advanced_model_topk_semantic_attention_2lexical"
 num_processes=1
-device=1
-model=ShowAndTellInGraphModel
+gpu_fraction=0.97
+device=0
+model=ShowAndTellAdvancedModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
 for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do 
@@ -28,9 +29,20 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --vocab_file=${DIR}/data/word_counts.txt \
         --output=${OUTPUT_DIR}/part-${prefix}.json \
         --model=${model} \
+        --attention_mechanism=BahdanauAttention \
+        --num_lstm_layers=1 \
+        --predict_words_via_image_output=True \
+        --use_semantic_attention=True \
+        --use_separate_embedding_for_semantic_attention=True \
+        --semantic_attention_type="topk" \
+        --use_lexical_embedding=True \
+        --lexical_mapping_file='${DIR}/data/word2postag.txt,${DIR}/data/word2char.txt' \
+        --lexical_embedding_type='postag,char' \
+        --embedding_size=256 \
+        --lexical_embedding_size='32,64' \
         --support_ingraph=True"
     fi
-  done | parallel -j $num_processes
+  done | bash
 
   if [ ! -f ${OUTPUT_DIR}/out.json ]; then
     python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json
@@ -42,4 +54,3 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
     echo eval result saved to ${OUTPUT_DIR}/out.eval
   fi
 done
-

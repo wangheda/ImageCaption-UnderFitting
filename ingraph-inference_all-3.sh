@@ -1,11 +1,11 @@
 #!/bin/bash
 
-model_name="show_and_tell_advanced_model_attention_finetune_with_decay"
-model="ShowAndTellAdvancedModel"
-ckpt=580699
+model_name="show_and_tell_in_graph_model_finetune_with_decay"
+model="ShowAndTellInGraphModel"
+ckpt=840000
 num_processes=1
-gpu_fraction=1.0
-device=0
+gpu_fraction=0.98
+device=1
 
 # the script directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -35,10 +35,6 @@ for mode in TRAIN VALIDATE TEST; do
       --vocab_file=${DIR}/data/word_counts.txt \
       --output=${OUTPUT_DIR}/part-${prefix}.json \
       --model=${model} \
-      --inception_return_tuple=True \
-      --use_attention_wrapper=True \
-      --attention_mechanism=BahdanauAttention \
-      --num_lstm_layers=1 \
       --support_ingraph=True
   done 
 done
