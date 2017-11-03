@@ -59,7 +59,7 @@ tf.flags.DEFINE_float("clip_gradients", 5.0,
                         "If not None, clip gradients to this value.")
 tf.flags.DEFINE_integer("max_checkpoints_to_keep", 5,
                         "Maximum number of recent checkpoints to preserve.")
-tf.flags.DEFINE_float("keep_checkpoint_every_n_hours", 0.25,
+tf.flags.DEFINE_float("keep_checkpoint_every_n_hours", 0.5,
                         "Keep a checkpoint every this many hours.")
 tf.flags.DEFINE_integer("save_interval_secs", 600,
                         "Save a checkpoint every this many secs.")

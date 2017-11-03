@@ -10,7 +10,7 @@ MODEL_DIR="${DIR}/model"
 model=ShowAndTellAdvancedModel
 model_dir_name=show_and_tell_advanced_model_visual_attention_2lexical-2.0-0.9-2.0
 
-cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
+cd im2txt && CUDA_VISIBLE_DEVICES=3 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
@@ -29,4 +29,4 @@ cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
   --lexical_embedding_size="32,128" \
   --support_ingraph=True \
   --train_inception_with_decay=True \
-  --number_of_steps=420000
+  --number_of_steps=600000

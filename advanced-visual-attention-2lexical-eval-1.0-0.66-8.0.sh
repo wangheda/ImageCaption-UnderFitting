@@ -9,7 +9,7 @@ device=0
 model=ShowAndTellAdvancedModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
-for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do 
+for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 20); do 
   # the script directory
   VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
   VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
@@ -21,28 +21,22 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
 
   cd ${DIR}/im2txt
 
-  for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do 
-    if [ ! -f ${OUTPUT_DIR}/part-${prefix}.json ]; then
-      echo "CUDA_VISIBLE_DEVICES=$device python inference.py \
-        --input_file_pattern='${VALIDATE_IMAGE_DIR}/${prefix}*.jpg' \
-        --checkpoint_path=${CHECKPOINT_PATH} \
-        --vocab_file=${DIR}/data/word_counts.txt \
-        --output=${OUTPUT_DIR}/part-${prefix}.json \
-        --model=${model} \
-        --inception_return_tuple=True \
-        --use_attention_wrapper=True \
-        --attention_mechanism=BahdanauAttention \
-        --num_lstm_layers=1 \
-        --use_lexical_embedding=True \
-        --lexical_mapping_file='${DIR}/data/word2postag.txt,${DIR}/data/word2char.txt' \
-        --lexical_embedding_type='postag,char' \
-        --lexical_embedding_size='32,128' \
-        --support_ingraph=True"
-    fi
-  done | bash
-
   if [ ! -f ${OUTPUT_DIR}/out.json ]; then
-    python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json
+    CUDA_VISIBLE_DEVICES=$device python inference.py \
+      --input_file_pattern="${VALIDATE_IMAGE_DIR}/${prefix}*.jpg" \
+      --checkpoint_path=${CHECKPOINT_PATH} \
+      --vocab_file=${DIR}/data/word_counts.txt \
+      --output=${OUTPUT_DIR}/out.json \
+      --model=${model} \
+      --inception_return_tuple=True \
+      --use_attention_wrapper=True \
+      --attention_mechanism=BahdanauAttention \
+      --num_lstm_layers=1 \
+      --use_lexical_embedding=True \
+      --lexical_mapping_file="${DIR}/data/word2postag.txt,${DIR}/data/word2char.txt" \
+      --lexical_embedding_type='postag,char' \
+      --lexical_embedding_size='32,128' \
+      --support_ingraph=True
     echo output saved to ${OUTPUT_DIR}/out.json
   fi
 
