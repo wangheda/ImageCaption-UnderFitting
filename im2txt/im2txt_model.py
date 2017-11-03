@@ -321,10 +321,35 @@ class Im2TxtModel(object):
       elif "bs_results" in outputs:
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
+      
+      if "top_n_attributes" in outputs:
+        self.top_n_attributes = outputs["top_n_attributes"]
     else:
       logits = outputs["logits"]
       targets = tf.reshape(self.target_seqs, [-1])
       weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+
+      # multi-label-loss 
+      if "attributes_logits" in outputs and "attributes_mask" in outputs:
+        attributes_logits = outputs["attributes_logits"]
+        attributes_mask = outputs["attributes_mask"]
+        attributes_targets = input_ops.get_attributes_target(self.target_seqs, attributes_mask)
+
+        attributes_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+          labels=attributes_targets,
+          logits=attributes_logits)
+
+        if FLAGS.use_idf_weighted_attribute_loss:
+          attributes_loss_mask = outputs["idf_weighted_mask"]
+        else:
+          attributes_loss_mask = attributes_mask
+        attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_loss_mask)),
+                                 tf.reduce_sum(attributes_loss_mask),
+                                 name="attributes_loss")
+
+        tf.losses.add_loss(attributes_loss)
+        tf.summary.scalar("losses/attributes_loss", attributes_loss)
+        self.attributes_loss = attributes_loss
 
       # Compute losses.
       losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,

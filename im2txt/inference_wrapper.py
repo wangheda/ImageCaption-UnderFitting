@@ -20,9 +20,10 @@ from __future__ import division
 from __future__ import print_function
 
 
-
+import tensorflow as tf
 import im2txt_model
 from inference_utils import inference_wrapper_base
+
 
 
 class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
@@ -39,6 +40,8 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
       self.predicted_ids = model.predicted_ids
     if hasattr(model, "scores"):
       self.scores = model.scores
+    if hasattr(model, "top_n_attributes"):
+      self.top_n_attributes = model.top_n_attributes
     return model
 
   def feed_image(self, sess, encoded_image):

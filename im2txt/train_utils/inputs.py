@@ -217,8 +217,16 @@ def batch_with_dynamic_pad(images_and_captions,
     tf.summary.scalar("caption_length/batch_min", tf.reduce_min(lengths))
     tf.summary.scalar("caption_length/batch_max", tf.reduce_max(lengths))
     tf.summary.scalar("caption_length/batch_mean", tf.reduce_mean(lengths))
-
+  
   return images, input_seqs, target_seqs, mask
+
+def caption_to_attributes_target(caption, mask):
+  unique_ids, _ = tf.unique(caption)
+  attributes_target = tf.reduce_sum(tf.one_hot(unique_ids, tf.shape(mask)[0]), axis=0) * mask
+  return attributes_target
+
+def get_attributes_target(target_seq, mask):
+  return tf.map_fn(lambda x: caption_to_attributes_target(x, mask), target_seq, dtype=tf.float32)
 
 def caption_to_multi_labels(captions):
   print("captions", captions)

@@ -26,10 +26,10 @@ import time
 import random
 
 import tensorflow as tf
+import numpy as np
 
-import inference_wrapper
-from inference_utils import caption_generator
 from inference_utils import vocabulary
+from im2txt_model import Im2TxtModel
 
 FLAGS = tf.flags.FLAGS
 
@@ -38,10 +38,8 @@ tf.flags.DEFINE_string("checkpoint_path", "",
                        "model checkpoint file.")
 tf.flags.DEFINE_string("vocab_file", "", "Text file containing the vocabulary.")
 tf.flags.DEFINE_string("input_file_pattern", "", "The pattern of images.")
-tf.flags.DEFINE_string("output", "", "The output file.")
 tf.flags.DEFINE_float("gpu_memory_fraction", 1.0, "Fraction of gpu memory used in inference.")
-tf.flags.DEFINE_boolean("predict_attributes_only", False,
-                        "If true, the model only predicts attributes")
+
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
@@ -50,13 +48,26 @@ def main(_):
   assert FLAGS.checkpoint_path, "--checkpoint_path is required"
   assert FLAGS.vocab_file, "--vocab_file is required"
   assert FLAGS.input_file_pattern , "--input_file_pattern is required"
-  assert FLAGS.output, "--output is required"
+  #assert FLAGS.output, "--output is required"
 
   # Build the inference graph.
+  checkpoint_path = FLAGS.checkpoint_path
   g = tf.Graph()
   with g.as_default():
-    model = inference_wrapper.InferenceWrapper()
-    restore_fn = model.build_graph(FLAGS.checkpoint_path)
+    tf.logging.info("Building model.")
+    model = Im2TxtModel(mode="inference")
+    model.build()
+    saver = tf.train.Saver()
+    if tf.gfile.IsDirectory(checkpoint_path):
+      checkpoint_path = tf.train.latest_checkpoint(checkpoint_path)
+      if not checkpoint_path:
+        raise ValueError("No checkpoint file found in: %s" % checkpoint_path)
+
+    def restore_fn(sess):
+      tf.logging.info("Loading model from checkpoint: %s", checkpoint_path)
+      saver.restore(sess, checkpoint_path)
+      tf.logging.info("Successfully loaded checkpoint: %s",
+                      os.path.basename(checkpoint_path))
   g.finalize()
 
   # Create the vocabulary.
@@ -68,39 +79,52 @@ def main(_):
   with tf.Session(graph=g, config=tf.ConfigProto(gpu_options=gpu_options)) as sess:
     # Load the model from checkpoint.
     restore_fn(sess)
-
     # Prepare the caption generator. Here we are implicitly using the default
     # beam search parameters. See caption_generator.py for a description of the
     # available beam search parameters.
-    generator = caption_generator.CaptionGenerator(model, vocab)
+    
     t_start = time.time()
     files = tf.gfile.Glob(FLAGS.input_file_pattern)
+    print("Found %d images to process" %(len(files)))
     for i, filename in enumerate(files):
-      if i % 100 == 0:
-          print(i)
+      if i > 10:
+        break
       with tf.gfile.GFile(filename, "r") as f:
         image = f.read()
+
+      print(filename)
+
+      predicted_ids, scores, top_n_attributes = sess.run(
+        [model.predicted_ids, model.scores, model.top_n_attributes], 
+        feed_dict={"image_feed:0": image})
+
+      predicted_ids = np.transpose(predicted_ids, (0,2,1))   
+      scores = np.transpose(scores, (0,2,1))
+      attr_probs, attr_ids = top_n_attributes
+      attributes = [vocab.id_to_word(w) for w in attr_ids[0]]
+      print(" ".join(attributes))
+      print(attr_probs[0])
+      #print(top_n_attributes)
+      for caption in predicted_ids[0]:
+        print(caption)
+        caption = [id for id in caption if id >= 0 and id != FLAGS.end_token]
+        sent = [vocab.id_to_word(w) for w in caption]
+        print(" ".join(sent))
+      """
+      captions = generator.beam_search(sess, image)
       image_id = filename.split('.')[0]
       if "/" in image_id:
         image_id = image_id.split("/")[-1]
       result = {}
       result['image_id'] = image_id
-      if FLAGS.predict_attributes_only:
-        attributes_ids, attributes_probs = generator.predict_attributes(sess, image)
-        attributes = [vocab.id_to_word(w) for w in attributes_ids]
-        result['attributes'] = " ".join(attributes)
-        result['probabilities'] = " ".join([str(prob) for prob in attributes_probs])
-      else:
-        captions = generator.beam_search(sess, image)
-        sent = [vocab.id_to_word(w) for w in captions[0]]
-        result['caption'] = "".join(sent)
+      sent = [vocab.id_to_word(w) for w in captions[0].sentence[1:-1]]
+      result['caption'] = "".join(sent)
       results.append(result)
+      """
   
   t_end = time.time()
   print("time: %f" %(t_end - t_start))
-  output = open(FLAGS.output, 'w')
-  json.dump(results, output, ensure_ascii=False, indent=4)
-  output.close()
+  
 
 if __name__ == "__main__":
   tf.app.run()

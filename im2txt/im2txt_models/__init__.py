@@ -45,7 +45,6 @@ tf.flags.DEFINE_string("attention_mechanism", "BahdanauAttention",
 tf.flags.DEFINE_boolean("output_attention", False,
                         "If the attention mechanism used in attention wrapper is Bahdanau, "
                         "this value should be false. If the mechanism is Lung, this value should be set true.")
-
 tf.flags.DEFINE_boolean("predict_words_via_image_output", False,
                         "If use semantic attention, then from which tensor the words are predicted.")
 tf.flags.DEFINE_boolean("predict_words_via_middle_layer", False,
@@ -76,8 +75,17 @@ tf.flags.DEFINE_string("lexical_mapping_file", "data/word2postag.txt",
 tf.flags.DEFINE_string("lexical_embedding_size", "32",
                         "The dimension of lexical embedding, comma-separated list of sizes corresponded to lexical_embedding_type.")
 
+# flags for semantic attention model
+tf.flags.DEFINE_integer("attributes_top_k", 15,
+                        "The number of attributes to generate attention memory")
+tf.flags.DEFINE_string("attributes_file", "data/attributes.txt", "Text file containing the attributes.")
+tf.flags.DEFINE_boolean("use_idf_weighted_attribute_loss", False,
+                        "Whether to use idf weighted attributes loss during training.")
+tf.flags.DEFINE_string("word_idf_file", "data/word_idf.txt", "Text file containing the word idf scores.")
+
 # models
 from show_and_tell_model import ShowAndTellModel
 from show_and_tell_in_graph_model import ShowAndTellInGraphModel
+from semantic_attention_model import SemanticAttentionModel
 from show_and_tell_advanced_model import ShowAndTellAdvancedModel
 from show_attend_tell_model import ShowAttendTellModel
