@@ -37,7 +37,8 @@ if __name__ == "__main__":
         R = obj["ROUGE_L"]
         print("| %d | %.4f | %.4f | %.4f | %.4f |" % (epoch, B4, C, M, R))
       except Exception as e:
-        print(e)
+        #print(e)
+        pass
 
 
 
