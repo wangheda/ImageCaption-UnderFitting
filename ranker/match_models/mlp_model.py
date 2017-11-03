@@ -66,13 +66,15 @@ class MlpModel(object):
       hidden_layer = tf.contrib.layers.fully_connected(
           inputs=hidden_layer,
           num_outputs=num,
-          activation_fn=tf.nn.sigmoid,
+          activation_fn=tf.nn.relu,
           weights_initializer=initializer)
 
     output_layer = tf.contrib.layers.fully_connected(
         inputs=hidden_layer,
         num_outputs=1,
-        activation_fn=None,
+        activation_fn=getattr(tf.nn, FLAGS.mlp_type_activation),
         weights_initializer=initializer)
+
+    print("use activation", getattr(tf.nn, FLAGS.mlp_type_activation))
 
     return output_layer

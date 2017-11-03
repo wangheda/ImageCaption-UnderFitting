@@ -23,6 +23,8 @@ FLAGS = flags.FLAGS
 
 class BaseLoss(object):
   """Inherit from this class when implementing new losses."""
+  def is_pairwise_loss(self):
+    raise NotImplementedError()
 
   def calculate_loss(self, pos_scores, neg_scores, **unused_params):
     raise NotImplementedError()
@@ -30,7 +32,24 @@ class BaseLoss(object):
 
 class HingeLoss(BaseLoss):
   """Hinge loss"""
+  def is_pairwise_loss(self):
+    return True
 
   def calculate_loss(self, pos_scores, neg_scores, margin=1.0, **unused_params):
     hinge_loss = tf.maximum(0.0, margin + neg_scores - pos_scores)
     return tf.reduce_mean(hinge_loss)
+
+class CrossEntropyLoss(BaseLoss):
+  """Calculate the cross entropy loss between the predictions and labels.
+  """
+  def is_pairwise_loss(self):
+    return False
+
+  def calculate_loss(self, predictions, labels, weights=None, **unused_params):
+    with tf.name_scope("loss_xent"):
+      epsilon = 1e-6
+      float_labels = tf.cast(labels, tf.float32)
+      cross_entropy_loss = float_labels * tf.log(predictions + epsilon) + (
+          1 - float_labels) * tf.log(1 - predictions + epsilon)
+      cross_entropy_loss = tf.negative(cross_entropy_loss)
+      return tf.reduce_mean(tf.reduce_sum(cross_entropy_loss, 1))

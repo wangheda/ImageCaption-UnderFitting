@@ -61,7 +61,7 @@ tf.flags.DEFINE_float("initializer_scale", 0.08,
 
 tf.flags.DEFINE_string("loss", "HingeLoss",
                        "Loss.")
-tf.flags.DEFINE_float("hinge_loss_margin", 1.0,
+tf.flags.DEFINE_float("hinge_loss_margin", 0.3,
                       "Hinge loss margin.")
 FLAGS = tf.app.flags.FLAGS
 
@@ -229,19 +229,32 @@ class RankerModel(object):
     if self.mode == "inference":
       self.output_scores = outputs
     else:
-      pos_scores, neg_scores = tf.split(value=outputs,
-                                        num_or_size_splits=[self.batch_size, self.batch_size],
-                                        axis=0)
-
       # Compute losses.
       loss_fn = find_class_by_name(FLAGS.loss, [losses])
       loss_obj = loss_fn()
-      batch_loss = tf.identity(loss_obj.calculate_loss(
-                                  pos_scores=pos_scores,
-                                  neg_scores=neg_scores,
-                                  margin=FLAGS.hinge_loss_margin
-                               ), name="batch_loss")
-      tf.losses.add_loss(batch_loss)
+
+      if loss_obj.is_pairwise_loss():
+        pos_scores, neg_scores = tf.split(value=outputs,
+                                          num_or_size_splits=[self.batch_size, self.batch_size],
+                                          axis=0)
+
+        batch_loss = tf.identity(loss_obj.calculate_loss(
+                                    pos_scores=pos_scores,
+                                    neg_scores=neg_scores,
+                                    margin=FLAGS.hinge_loss_margin
+                                 ), name="batch_loss")
+        tf.losses.add_loss(batch_loss)
+      else: # point-wise loss
+        labels = tf.concat([
+                    tf.ones([self.batch_size, 1]),
+                    tf.zeros([self.batch_size, 1])
+                 ], axis=0)
+
+        batch_loss = tf.identity(loss_obj.calculate_loss(
+                                    predictions=outputs,
+                                    labels=labels,
+                                 ), name="batch_loss")
+        tf.losses.add_loss(batch_loss)
 
       # add auxiliary losses here
       # add auxiliary losses end
