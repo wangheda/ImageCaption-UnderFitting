@@ -199,8 +199,8 @@ class RankerModel(object):
     text_model = text_model_fn()
 
     if self.mode == "train":
-      self.captions = magic_concat(self.pos_captions)
-      self.seqlens = magic_concat(self.pos_seqlens)
+      self.captions = tf.concat([self.pos_captions, self.neg_captions], axis=0)
+      self.seqlens = tf.concat([self.pos_seqlens, self.neg_seqlens], axis=0)
 
     text_output = text_model.create_model(
           captions = self.captions, 

@@ -10,9 +10,9 @@ image_model=InceptionV3Model
 text_model=LstmModel
 match_model=MlpModel
 
-model_dir_name=ranker_baseline_model
+model_dir_name=ranker_pointwise_baseline_model
 
-cd ranker && CUDA_VISIBLE_DEVICES=0 python train.py \
+cd ranker && CUDA_VISIBLE_DEVICES=1 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/rankertrain-*.tfrecord" \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
