@@ -1,12 +1,12 @@
 #!/bin/bash
 
-model_name="semantic_attention_model_join"
+model_name="semantic_attention_model_join_idf_weighted"
 model="SemanticAttentionModel"
 #ckpt=520000
-ckpt=601753
+ckpt=600000
 num_processes=2
 gpu_fraction=0.45
-device=0
+device=1
 
 # the script directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
