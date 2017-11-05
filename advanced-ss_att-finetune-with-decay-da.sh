@@ -36,4 +36,4 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --batch_size=30 \
   --num_examples_per_epoch=210000 \
   --train_inception_with_decay=True \
-  --number_of_steps=600000
+  --number_of_steps=700000

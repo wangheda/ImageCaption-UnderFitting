@@ -131,14 +131,29 @@ class ShowAndTellAdvancedModel(object):
     # This LSTM cell has biases and outputs tanh(new_c) * sigmoid(o), but the
     # modified LSTM in the "Show and Tell" paper has no biases and outputs
     # new_c * sigmoid(o).
-    if FLAGS.num_lstm_layers > 1:
-      lstm_cell = tf.contrib.rnn.MultiRNNCell([
-                          tf.contrib.rnn.BasicLSTMCell(
-                              num_units=FLAGS.num_lstm_units, state_is_tuple=True)
-                      for i in xrange(FLAGS.num_lstm_layers)], state_is_tuple=True)
+    if FLAGS.lstm_cell_type == "vanilla":
+      if FLAGS.num_lstm_layers > 1:
+        lstm_cell = tf.contrib.rnn.MultiRNNCell([
+                            tf.contrib.rnn.BasicLSTMCell(
+                                num_units=FLAGS.num_lstm_units, state_is_tuple=True)
+                        for i in xrange(FLAGS.num_lstm_layers)], state_is_tuple=True)
+      else:
+        lstm_cell = tf.contrib.rnn.BasicLSTMCell(
+                        num_units=FLAGS.num_lstm_units, state_is_tuple=True)
+    elif FLAGS.lstm_cell_type == "highway":
+      if FLAGS.num_lstm_layers > 1:
+        lstm_cell = tf.contrib.rnn.MultiRNNCell([
+                            tf.contrib.rnn.HighwayWrapper(
+                                cell=tf.contrib.rnn.BasicLSTMCell(
+                                    num_units=FLAGS.num_lstm_units, state_is_tuple=True)
+                            )
+                        for i in xrange(FLAGS.num_lstm_layers)], state_is_tuple=True)
+      else:
+        lstm_cell = tf.contrib.rnn.HighwayWrapper(
+                        cell=tf.contrib.rnn.BasicLSTMCell(
+                                num_units=FLAGS.num_lstm_units, state_is_tuple=True))
     else:
-      lstm_cell = tf.contrib.rnn.BasicLSTMCell(
-                      num_units=FLAGS.num_lstm_units, state_is_tuple=True)
+      raise Exception("Unknown lstm_cell_type!")
 
     if mode == "train":
       lstm_cell = tf.contrib.rnn.DropoutWrapper(

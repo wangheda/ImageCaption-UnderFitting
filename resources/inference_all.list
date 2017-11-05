@@ -1,0 +1,5 @@
+model/show_and_tell_advanced_model_attention_finetune_with_decay/model.ckpt-341571.inference_all
+model/show_and_tell_advanced_model_attention_finetune_with_decay/model.ckpt-580699.inference_all
+model/show_and_tell_in_graph_model_2_finetune_with_decay/model.ckpt-581226.inference_all
+model/show_and_tell_in_graph_model_finetune/model.ckpt-840000.inference_all
+model/show_and_tell_in_graph_model_finetune_with_decay/model.ckpt-840000.inference_all
