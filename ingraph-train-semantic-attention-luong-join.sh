@@ -4,13 +4,13 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 INCEPTION_CHECKPOINT="${DIR}/pretrained_model/inception_v3/inception_v3.ckpt"
-TFRECORD_DIR="${DIR}/data/Aug_TFRecord_data"
+TFRECORD_DIR="${DIR}/data/TFRecord_data"
 MODEL_DIR="${DIR}/model"
 
-model=ShowAndTellAdvancedModel
-model_dir_name=show_and_tell_advanced_model_attention_finetune_with_decay_da
-original_model_dir_name=show_and_tell_advanced_model_attention_da
-start_ckpt=105000
+model=SemanticAttentionModel
+model_dir_name=semantic_attention_model_luong_join
+original_model_dir_name=semantic_attention_model_luong_attr_only
+start_ckpt=180000
 
 # copy the starting checkpoint
 if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
@@ -24,16 +24,14 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
-  --initial_learning_rate=1.0 \
-  --learning_rate_decay_factor=0.6 \
-  --inception_return_tuple=True \
-  --use_scheduled_sampling=False \
-  --use_attention_wrapper=True \
-  --attention_mechanism=BahdanauAttention \
-  --num_lstm_layers=1 \
   --support_ingraph=True \
-  --support_flip=True \
-  --batch_size=30 \
-  --num_examples_per_epoch=210000 \
+  --number_of_steps=800000 \
+  --initial_learning_rate=4.6 \
+  --learning_rate_decay_factor=0.6 \
+  --attributes_top_k=15 \
   --train_inception_with_decay=True \
-  --number_of_steps=700000
+  --vocab_file="${DIR}/data/word_counts.txt" \
+  --attributes_file="${DIR}/data/attributes.txt" \
+  --attention_mechanism=LuongAttention \
+  --output_attention=True \
+  --num_attention_depth=512
