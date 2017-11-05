@@ -69,6 +69,20 @@ Then, set the model name and checkpoint number in `eval.sh` and run:
 
 It will show and save the metrics.
 
+# Preparation for reranking
+
+To generate reranking dataset, write the relative model paths intto resources/inference\_all.list, and run the dataset builder script.
+
+    bash -x scripts/ranker_build_dataset.sh
+
+The resulting tfrecord files will be saved in data/Ranker\_TFRecord\_data/[sha1sum-of-model-list]/.
+
+After generating the dataset, you can run the evaluating script.
+
+    bash -x scripts/ranker_evaluate_oracle.sh
+
+This script will estimate the upper limit (may not be a tight upper bound) of reranking on VALIDATE set.
+
 # Use lexical embedding
 
 In ShowAndTellAdvancedModel, you can augment word embedding with the embedding of the pos-tag of the word. The mapping between the word and the pos-tag should be generated beforehand via the following command:

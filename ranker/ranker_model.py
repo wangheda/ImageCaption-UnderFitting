@@ -61,7 +61,7 @@ tf.flags.DEFINE_float("initializer_scale", 0.08,
 
 tf.flags.DEFINE_string("loss", "HingeLoss",
                        "Loss.")
-tf.flags.DEFINE_float("hinge_loss_margin", 0.3,
+tf.flags.DEFINE_float("hinge_loss_margin", 1.0,
                       "Hinge loss margin.")
 FLAGS = tf.app.flags.FLAGS
 
