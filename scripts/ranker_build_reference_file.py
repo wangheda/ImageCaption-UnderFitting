@@ -59,6 +59,17 @@ def load_and_process_metadata(captions_file):
     Returns:
       A list of ImageMetadata.
     """
+    if FLAGS.prefix is not None:
+      prefix = set(FLAGS.prefix.split(","))
+    else:
+      prefix = set()
+
+    def with_prefix(string, prefix):
+      for p in prefix:
+        if string.startswith(p):
+          return True
+      return False
+
     image_id = set([])
     id_to_captions = {}
     with open(captions_file, 'r') as f:
@@ -66,7 +77,7 @@ def load_and_process_metadata(captions_file):
     for data in caption_data:
         image_name = data['image_id'].split('.')[0]
         descriptions = data['caption']
-        if FLAGS.prefix is not None and not image_name.startswith(FLAGS.prefix):
+        if FLAGS.prefix is not None and not with_prefix(image_name, prefix):
             continue
         if image_name not in image_id:
             id_to_captions.setdefault(image_name, [])
