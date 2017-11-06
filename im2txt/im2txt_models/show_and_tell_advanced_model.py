@@ -166,20 +166,11 @@ class ShowAndTellAdvancedModel(object):
       if mode == "inference":
         middle_layer = tf.contrib.seq2seq.tile_batch(middle_layer, multiplier=FLAGS.beam_width)
 
-      attention_mechanism = getattr(tf.contrib.seq2seq, 
+      visual_attention_mechanism = getattr(tf.contrib.seq2seq, 
           FLAGS.attention_mechanism)(
               num_units = FLAGS.num_attention_depth,
               memory = middle_layer)
 
-      print attention_mechanism.alignments_size
-      print attention_mechanism.keys
-      print attention_mechanism.values
-
-      lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
-          lstm_cell,
-          attention_mechanism,
-          attention_layer_size=FLAGS.num_attention_depth,
-          output_attention=FLAGS.output_attention)
 
     if FLAGS.use_semantic_attention:
       if FLAGS.use_separate_embedding_for_semantic_attention:
@@ -224,18 +215,25 @@ class ShowAndTellAdvancedModel(object):
               num_units = FLAGS.semantic_attention_word_hash_depth,
               memory = semantic_memory)
 
-      print semantic_attention_mechanism.alignments_size
-      print semantic_attention_mechanism.keys
-      print semantic_attention_mechanism.values
+    if FLAGS.use_attention_wrapper and FLAGS.use_semantic_attention:
+      attention_mechanism = [visual_attention_mechanism, semantic_attention_mechanism]
+      attention_layer_size = [FLAGS.num_attention_depth, FLAGS.num_attention_depth]
+    elif FLAGS.use_attention_wrapper:
+      attention_mechanism = visual_attention_mechanism
+      attention_layer_size = FLAGS.num_attention_depth
+    elif FLAGS.use_semantic_attention:
+      attention_mechanism = semantic_attention_mechanism
+      attention_layer_size = FLAGS.num_attention_depth
+    else:
+      attention_mechanism = None
+      attention_layer_size = 0
 
+    if attention_mechanism is not None:
       lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
           lstm_cell,
-          semantic_attention_mechanism,
-          attention_layer_size=FLAGS.semantic_attention_word_hash_depth,
+          attention_mechanism,
+          attention_layer_size=attention_layer_size,
           output_attention=FLAGS.output_attention)
-
-    #output_layer = Dense(units=FLAGS.vocab_size,
-    #                     name="output_layer")
 
     with tf.variable_scope("lstm", initializer=initializer) as lstm_scope:
       # Feed the image embeddings to set the initial LSTM state.
@@ -302,7 +300,6 @@ class ShowAndTellAdvancedModel(object):
           initial_state=initial_state,
           output_layer=output_layer)
 
-
       elif mode == "inference":
         decoder = tf.contrib.seq2seq.BeamSearchDecoder(
           cell=lstm_cell,
@@ -313,7 +310,6 @@ class ShowAndTellAdvancedModel(object):
           beam_width=FLAGS.beam_width,
           output_layer=output_layer,
           length_penalty_weight=0.0)
-
 
       else:
         raise Exception("Unknown mode!")
