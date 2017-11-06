@@ -3,9 +3,9 @@
 model_name="semantic_attention_model_join"
 model="SemanticAttentionModel"
 #ckpt=520000
-ckpt=600000
-num_processes=1
-gpu_fraction=1
+ckpt=601753
+num_processes=2
+gpu_fraction=0.45
 device=0
 
 # the script directory
@@ -34,7 +34,7 @@ for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
         --support_ingraph=True \
         --gpu_memory_fraction=$gpu_fraction"
   fi
-done | bash #parallel -j $num_processes
+done | parallel -j $num_processes
 
 if [ ! -f ${OUTPUT_DIR}/out.json ]; then
   python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json

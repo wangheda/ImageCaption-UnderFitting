@@ -5,7 +5,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 model_name="semantic_attention_model_join"
 num_processes=2
 gpu_fraction=0.45
-device=0
+device=1
 model=SemanticAttentionModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
@@ -33,7 +33,7 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --support_ingraph=True \
         --gpu_memory_fraction=$gpu_fraction"
     fi
-  done | bash #parallel -j $num_processes
+  done | parallel -j $num_processes
 
   if [ ! -f ${OUTPUT_DIR}/out.json ]; then
     python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json
