@@ -4,7 +4,6 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 model_name="show_and_tell_advanced_model_visual_attention_lexical_finetune_with_decay"
 num_processes=1
-gpu_fraction=0.97
 device=1
 model=ShowAndTellAdvancedModel
 
@@ -35,8 +34,7 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --use_lexical_embedding=True \
         --lexical_mapping_file='${DIR}/data/word2postag.txt' \
         --num_lstm_layers=2 \
-        --support_ingraph=True \
-        --gpu_memory_fraction=$gpu_fraction"
+        --support_ingraph=True"
     fi
   done | bash #parallel -j $num_processes
 
