@@ -15,6 +15,7 @@ for line in sys.stdin:
 results = []
 for image_id in id2captions:
   caption, score = id2captions[image_id]
+  caption = caption.replace("<UNK>", "")
   result = {}
   result['image_id'] = image_id
   result['caption'] = caption

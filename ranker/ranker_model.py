@@ -142,21 +142,18 @@ class RankerModel(object):
       self.input_mask (training and eval only)
     """
     if self.mode == "inference":
-      # In inference mode, images and inputs are fed via placeholders.
-      image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
-      input_feed = tf.placeholder(dtype=tf.int64,
-                                  shape=[None],  # batch_size
-                                  name="input_feed")
-
+      assert FLAGS.batch_size % FLAGS.lines_per_image == 0
       image_ids, images, captions, seqlens = \
           get_input_data_tensors(data_pattern=FLAGS.input_file_pattern,
                                  is_training=False,
                                  batch_size=FLAGS.batch_size,
-                                 num_readers=FLAGS.num_readers)
-      self.batch_size = FLAGS.sample_size
-      self.images = images[:self.batch_size,:,:,:]
-      self.captions = captions[:self.batch_size,:]
-      self.seqlens = seqlens[:self.batch_size]
+                                 num_readers=1)
+      self.batch_size = FLAGS.batch_size
+      self.image_ids = image_ids
+      self.images = images
+      self.captions = captions
+      self.seqlens = seqlens
+      print(self.images, self.captions, self.seqlens)
     else:
       image_ids, images, pos_captions, pos_seqlens, neg_captions, neg_seqlens = \
           get_input_data_tensors(data_pattern=FLAGS.input_file_pattern,
@@ -164,6 +161,7 @@ class RankerModel(object):
                                  batch_size=FLAGS.batch_size,
                                  num_readers=FLAGS.num_readers)
       self.batch_size = FLAGS.sample_size
+      self.image_ids = image_ids
       self.images = images[:self.batch_size,:,:,:]
       self.pos_captions = pos_captions[:self.batch_size,:]
       self.pos_seqlens = pos_seqlens[:self.batch_size]
