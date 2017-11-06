@@ -83,9 +83,18 @@ tf.flags.DEFINE_boolean("use_idf_weighted_attribute_loss", False,
                         "Whether to use idf weighted attributes loss during training.")
 tf.flags.DEFINE_string("word_idf_file", "data/word_idf.txt", "Text file containing the word idf scores.")
 
+# flags for review network model
+tf.flags.DEFINE_integer("review_steps", 8,
+                        "The number of review steps")
+tf.flags.DEFINE_float("discriminative_loss_weights", 1.0,
+                      "The weight of discriminative loss.")
+
+
+
 # models
 from show_and_tell_model import ShowAndTellModel
 from show_and_tell_in_graph_model import ShowAndTellInGraphModel
 from semantic_attention_model import SemanticAttentionModel
 from show_and_tell_advanced_model import ShowAndTellAdvancedModel
 from show_attend_tell_model import ShowAttendTellModel
+from review_network_model import ReviewNetworkModel
