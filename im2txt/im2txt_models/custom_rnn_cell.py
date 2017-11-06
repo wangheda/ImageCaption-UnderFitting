@@ -1,19 +1,19 @@
 from tensorflow.python.ops.rnn_cell_impl import *
 
-class StackedWrapper(RNNCell):
+class FastForwardWrapper(RNNCell):
   """RNNCell wrapper that ensures cell inputs are concatenated to the outputs."""
 
-  def __init__(self, cell, stack_fn=None):
+  def __init__(self, cell, ff_fn=None):
     """Constructs a `StackedWrapper` for `cell`.
     Args:
       cell: An instance of `RNNCell`.
-      stack_fn: (Optional) The function to map raw cell inputs and raw cell
+      ff_fn: (Optional) The function to map raw cell inputs and raw cell
         outputs to the actual cell outputs of the stack network.
         Defaults to calling nest.map_structure on (lambda i, o: i + o), inputs
         and outputs.
     """
     self._cell = cell
-    self._stack_fn = stack_fn
+    self._ff_fn = ff_fn
 
   @property
   def state_size(self):
@@ -41,9 +41,9 @@ class StackedWrapper(RNNCell):
     """
     outputs, new_state = self._cell(inputs, state, scope=scope)
     # Ensure shapes match
-    def default_stack_fn(inputs, outputs):
+    def default_ff_fn(inputs, outputs):
       return nest.map_structure(lambda inp, out: tf.concat([inp, out], axis=-1), inputs, outputs)
-    res_outputs = (self._stack_fn or default_stack_fn)(inputs, outputs)
+    res_outputs = (self._ff_fn or default_ff_fn)(inputs, outputs)
     return (res_outputs, new_state)
 
 
