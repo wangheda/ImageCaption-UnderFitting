@@ -9,7 +9,7 @@ device=0
 model=ShowAndTellAdvancedModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
-for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 20); do 
+for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 20 | tac); do 
   # the script directory
   VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
   VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"

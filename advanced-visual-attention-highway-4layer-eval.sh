@@ -2,14 +2,13 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_advanced_model_visual_attention_2lexical-2.0-0.9-2.0"
+model_name="show_and_tell_advanced_model_visual_attention_highway_4layers"
 num_processes=1
-gpu_fraction=0.97
-device=3
+device=1
 model=ShowAndTellAdvancedModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
-for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 20 | tac); do 
+for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 15); do 
   # the script directory
   VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
   VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
@@ -31,11 +30,11 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail
       --inception_return_tuple=True \
       --use_attention_wrapper=True \
       --attention_mechanism=BahdanauAttention \
-      --num_lstm_layers=1 \
-      --use_lexical_embedding=True \
-      --lexical_mapping_file="${DIR}/data/word2postag.txt,${DIR}/data/word2char.txt" \
-      --lexical_embedding_type='postag,char' \
-      --lexical_embedding_size='32,128' \
+      --num_lstm_layers=4 \
+      --lstm_cell_type='highway' \
+      --num_lstm_units=512 \
+      --num_attention_depth=256 \
+      --embedding_size=256 \
       --support_ingraph=True
     echo output saved to ${OUTPUT_DIR}/out.json
   fi

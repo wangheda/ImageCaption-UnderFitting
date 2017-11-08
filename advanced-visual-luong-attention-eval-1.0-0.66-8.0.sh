@@ -2,7 +2,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_advanced_model_visual_attention_2lexical-2.0-0.9-2.0"
+model_name=show_and_tell_advanced_model_visual_luong_attention-1.0-0.66-8.0
 num_processes=1
 gpu_fraction=0.97
 device=3
@@ -30,12 +30,10 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail
       --model=${model} \
       --inception_return_tuple=True \
       --use_attention_wrapper=True \
-      --attention_mechanism=BahdanauAttention \
+      --attention_mechanism=LuongAttention \
+      --num_attention_depth=512 \
+      --output_attention=True \
       --num_lstm_layers=1 \
-      --use_lexical_embedding=True \
-      --lexical_mapping_file="${DIR}/data/word2postag.txt,${DIR}/data/word2char.txt" \
-      --lexical_embedding_type='postag,char' \
-      --lexical_embedding_size='32,128' \
       --support_ingraph=True
     echo output saved to ${OUTPUT_DIR}/out.json
   fi
