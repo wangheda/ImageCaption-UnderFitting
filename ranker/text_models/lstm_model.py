@@ -48,7 +48,7 @@ class LstmModel(object):
       else:
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(
                     num_units=FLAGS.num_lstm_units, state_is_tuple=True)
-    elif FLAGS.lstm_cell_type in ["residual", "highway", "fast-forward"]:
+    elif FLAGS.lstm_cell_type in ["residual", "highway", "fast_forward"]:
       wrapper_class_dict = {"residual":     tf.contrib.rnn.ResidualWrapper,
                             "highway":      tf.contrib.rnn.HighwayWrapper,
                             "fast_forward": custom_rnn_cell.FastForwardWrapper}
