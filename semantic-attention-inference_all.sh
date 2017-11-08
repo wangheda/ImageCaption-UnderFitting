@@ -30,7 +30,7 @@ for mode in TRAIN VALIDATE TEST; do
   for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do 
     sleep 2s
     CUDA_VISIBLE_DEVICES=$device python inference_all.py \
-      --input_file_pattern='${VALIDATE_IMAGE_DIR}/${prefix}*.jpg' \
+      --input_file_pattern="${IMAGE_DIR}/${prefix}*.jpg" \
       --checkpoint_path=${CHECKPOINT_PATH} \
       --vocab_file=${DIR}/data/word_counts.txt \
       --attributes_file=${DIR}/data/attributes.txt \

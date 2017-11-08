@@ -18,5 +18,6 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --support_ingraph=True \
   --number_of_steps=115000 \
   --only_attributes_loss=True \
+  --attributes_top_k=15 \
   --vocab_file="${DIR}/data/word_counts.txt" \
   --attributes_file="${DIR}/data/attributes.txt"
