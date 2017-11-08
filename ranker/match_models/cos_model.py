@@ -48,6 +48,8 @@ class CosModel(object):
 
     if FLAGS.cos_type_activation is not None:
       activation_fn = getattr(tf.nn, FLAGS.cos_type_activation)
+    else:
+      activation_fn = None
 
     # Map image model output into embedding space.
     with tf.variable_scope("image_embedding") as scope:
