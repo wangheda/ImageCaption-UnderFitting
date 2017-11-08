@@ -77,6 +77,8 @@ tf.flags.DEFINE_boolean("inception_return_tuple", False,
                         "Whether to remain position information in inception v3 output feature matrix, alongside with the origin pooled feature.")
 tf.flags.DEFINE_boolean("yet_another_inception", False,
                         "If set true, return two inception output. See image_embedding for details.")
+tf.flags.DEFINE_boolean("normalize_image", False,
+                        "If set true, do l2_normalize on all image outputs. See image_embedding for details.")
 
 FLAGS = tf.app.flags.FLAGS
 

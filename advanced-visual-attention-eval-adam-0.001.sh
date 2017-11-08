@@ -2,7 +2,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_advanced_model_visual_attention_5e-4"
+model_name="show_and_tell_advanced_model_visual_attention_adam"
 num_processes=1
 gpu_fraction=0.97
 device=0
@@ -30,8 +30,9 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail
       --model=${model} \
       --inception_return_tuple=True \
       --use_attention_wrapper=True \
-      --attention_mechanism=LuongAttention \
-      --output_attention=True \
+      --attention_mechanism=BahdanauAttention \
+      --output_attention=False \
+      --normalize_image=True \
       --num_attention_depth=512 \
       --num_lstm_layers=1 \
       --support_ingraph=True

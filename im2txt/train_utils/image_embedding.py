@@ -25,6 +25,7 @@ import tensorflow as tf
 from tensorflow.contrib.slim.python.slim.nets.inception_v3 import inception_v3_base
 
 slim = tf.contrib.slim
+FLAGS = tf.flags.FLAGS
 
 
 def inception_v3(images,
@@ -116,6 +117,8 @@ def inception_v3(images,
               is_training=is_inception_model_training,
               scope="dropout")
           net = slim.flatten(net, scope="flatten")
+          if FLAGS.normalize_image:
+            net = tf.nn.l2_normalize(net, dim=-1)
 
   # Add summaries.
   if add_summaries:
@@ -123,6 +126,8 @@ def inception_v3(images,
       tf.contrib.layers.summaries.summarize_activation(v)
 
   if inception_return_tuple:
+    if FLAGS.normalize_image:
+      original_net = tf.nn.l2_normalize(original_net, dim=-1)
     return net, original_net
   else:
     return net
