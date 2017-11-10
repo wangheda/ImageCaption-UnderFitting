@@ -73,6 +73,9 @@ tf.flags.DEFINE_boolean("only_attributes_loss", False,
 tf.flags.DEFINE_string("vocab_file", "",
                        "Text file containing the vocabulary.")
 
+tf.flags.DEFINE_boolean("rl_train", False,
+                        "Train with reinforcement learning.")
+
 import im2txt_model
 
 tf.logging.set_verbosity(tf.logging.INFO)

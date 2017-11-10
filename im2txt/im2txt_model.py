@@ -86,6 +86,14 @@ def find_class_by_name(name, modules):
   modules = [getattr(module, name, None) for module in modules]
   return next(a for a in modules if a)
 
+def get_shape(tensor):
+  """Returns static shape if available and dynamic shape otherwise."""
+  static_shape = tensor.shape.as_list()
+  dynamic_shape = tf.unstack(tf.shape(tensor))
+  dims = [s[1] if s[0] is None else s[0]
+          for s in zip(static_shape, dynamic_shape)]
+  return dims
+
 
 class Im2TxtModel(object):
   """Image-to-text implementation"""
@@ -325,9 +333,65 @@ class Im2TxtModel(object):
       if "top_n_attributes" in outputs:
         self.top_n_attributes = outputs["top_n_attributes"]
     else:
-      logits = outputs["logits"]
-      targets = tf.reshape(self.target_seqs, [-1])
-      weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+      # caption loss
+      if FLAGS.rl_train == True:
+        # rl loss
+        def score(caption, gt_caption):
+          # The score function needs to finish
+          return tf.ones([FLAGS.batch_size], tf.float32)
+        # load greed caption and sample caption to calculate reward
+        greedy_captions = outputs["greedy_results"].sample_id
+        sample_captions = outputs["sample_results"].sample_id
+        sample_logits = outputs["sample_results"].rnn_output
+        # reward = -1 * (reward)
+        reward = score(greedy_captions, self.target_seqs) - score(sample_captions, self.target_seqs)
+        # extract the logprobs of each word in sample_captions
+        sample_probs = tf.nn.softmax(sample_logits)
+        #batch_size, seq_length, _ = sample_probs.get_shape()
+        batch_size, seq_length, _ = get_shape(sample_probs)
+        weights = tf.ones([batch_size, seq_length], tf.float32)
+        batch_index = tf.transpose(
+                        tf.reshape(
+                          tf.tile(
+                            tf.range(0,batch_size), [seq_length]), [seq_length, batch_size]))
+        seq_index = tf.reshape(tf.tile(tf.range(0,seq_length), [batch_size]), [batch_size, seq_length])
+        gather_index = tf.concat([
+                                tf.expand_dims(batch_index, -1),
+                                tf.expand_dims(seq_index, -1),
+                                tf.expand_dims(sample_captions, -1)
+                                 ], axis=-1)
+        sample_caption_probs = tf.gather_nd(sample_probs, gather_index)
+        losses = reward * tf.log(sample_caption_probs)
+        rl_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
+                         tf.reduce_sum(weights),
+                         name="rl_loss")
+        tf.losses.add_loss(rl_loss)
+        tf.summary.scalar("losses/rl_loss", rl_loss)
+        self.target_rl_losses = losses  # Used in evaluation.
+        self.target_rl_loss_weights = weights  # Used in evaluation.
+
+        print("rl debug:")
+        print("greedy_captions:", greedy_captions)
+        print("sample_captions:", sample_captions)
+        print("sample_probs:", sample_probs)
+        print(batch_size, seq_length)
+        print("sample_caption_probs:", sample_caption_probs)
+      else:
+        # cross entropy loss
+        logits = outputs["logits"]
+        targets = tf.reshape(self.target_seqs, [-1])
+        weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+        # Compute losses.
+        losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
+                                                                logits=logits)
+        batch_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
+                            tf.reduce_sum(weights),
+                            name="batch_loss")
+        tf.losses.add_loss(batch_loss)
+        tf.summary.scalar("losses/batch_loss", batch_loss)
+        self.target_cross_entropy_losses = losses  # Used in evaluation.
+        self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
+
 
       # multi-label-loss 
       if "attributes_logits" in outputs and "attributes_mask" in outputs:
@@ -351,14 +415,7 @@ class Im2TxtModel(object):
         tf.summary.scalar("losses/attributes_loss", attributes_loss)
         self.attributes_loss = attributes_loss
 
-      # Compute losses.
-      losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
-                                                              logits=logits)
-      batch_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
-                          tf.reduce_sum(weights),
-                          name="batch_loss")
-      tf.losses.add_loss(batch_loss)
-
+      # word loss
       if "word_predictions" in outputs:
         word_predictions = outputs["word_predictions"]
         word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
@@ -373,15 +430,12 @@ class Im2TxtModel(object):
 
       total_loss = tf.losses.get_total_loss()
 
-      # Add summaries.
-      tf.summary.scalar("losses/batch_loss", batch_loss)
+      # Add summaries.   
       tf.summary.scalar("losses/total_loss", total_loss)
       for var in tf.trainable_variables():
         tf.summary.histogram("parameters/" + var.op.name, var)
 
       self.total_loss = total_loss
-      self.target_cross_entropy_losses = losses  # Used in evaluation.
-      self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
 
   def setup_inception_initializer(self):
     """Sets up the function to restore inception variables from checkpoint."""

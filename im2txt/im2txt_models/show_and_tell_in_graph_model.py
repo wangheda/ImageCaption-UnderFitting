@@ -91,10 +91,35 @@ class ShowAndTellInGraphModel(object):
       # lstm_scope.reuse_variables()
 
       if mode == "train":
-        sequence_length = tf.reduce_sum(input_mask, 1)
-        helper = tf.contrib.seq2seq.TrainingHelper(
-          inputs=seq_embeddings,
-          sequence_length=sequence_length)
+        if FLAGS.rl_train == True:
+          # use rl train
+          # 1. generate greedy captions
+          greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+            embedding=embedding_map,
+            start_tokens=tf.fill([batch_size], FLAGS.start_token),
+            end_token=FLAGS.end_token)
+          greedy_decoder = tf.contrib.seq2seq.BasicDecoder(
+            cell=lstm_cell,
+            helper=greedy_helper,
+            initial_state=initial_state,
+            output_layer=output_layer)
+          greedy_outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(
+            decoder=greedy_decoder,
+            output_time_major=False,
+            impute_finished=False)
+
+          # 2. generate sample captions
+          helper = tf.contrib.seq2seq.SampleEmbeddingHelper(
+            embedding=embedding_map,
+            start_tokens=tf.fill([batch_size], FLAGS.start_token),
+            end_token=FLAGS.end_token)
+        else:
+          # use cross entropy
+          sequence_length = tf.reduce_sum(input_mask, 1)
+          helper = tf.contrib.seq2seq.TrainingHelper(
+            inputs=seq_embeddings,
+            sequence_length=sequence_length)
+          
         decoder = tf.contrib.seq2seq.BasicDecoder(
           cell=lstm_cell,
           helper=helper,
@@ -125,8 +150,11 @@ class ShowAndTellInGraphModel(object):
         maximum_iterations=maximum_iterations)
 
     if mode == "train":
-      logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
-      return {"logits": logits}
+      if FLAGS.rl_train == True:
+        return {"sample_results": outputs, "greedy_results": greedy_outputs}
+      else:
+        logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
+        return {"logits": logits}
     else:
       return {"bs_results": outputs}
 
