@@ -143,7 +143,7 @@ class ShowAndTellInGraphModel(object):
         raise Exception("Unknown mode!")
 
       maximum_iterations = None if mode == "train" else FLAGS.max_caption_length
-      outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(
+      outputs, _ , outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
         decoder=decoder,
         output_time_major=False,
         impute_finished=False,
@@ -151,7 +151,9 @@ class ShowAndTellInGraphModel(object):
 
     if mode == "train":
       if FLAGS.rl_train == True:
-        return {"sample_results": outputs, "greedy_results": greedy_outputs}
+        return {"sample_results": outputs, 
+                "sample_results_sequence_lengths": outputs_sequence_lengths, 
+                "greedy_results": greedy_outputs}
       else:
         logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
         return {"logits": logits}

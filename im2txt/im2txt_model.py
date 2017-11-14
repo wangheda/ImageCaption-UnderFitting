@@ -342,6 +342,7 @@ class Im2TxtModel(object):
         # load greed caption and sample caption to calculate reward
         greedy_captions = outputs["greedy_results"].sample_id
         sample_captions = outputs["sample_results"].sample_id
+        sample_captions_sequence_lengths = outputs["sample_results_sequence_lengths"]
         sample_logits = outputs["sample_results"].rnn_output
         # reward = -1 * (reward)
         reward = score(greedy_captions, self.target_seqs) - score(sample_captions, self.target_seqs)
@@ -373,6 +374,7 @@ class Im2TxtModel(object):
         print("rl debug:")
         print("greedy_captions:", greedy_captions)
         print("sample_captions:", sample_captions)
+        print("sample_captions_sequence_lengths:", sample_captions_sequence_lengths)
         print("sample_probs:", sample_probs)
         print(batch_size, seq_length)
         print("sample_caption_probs:", sample_caption_probs)
