@@ -351,6 +351,17 @@ class Im2TxtModel(object):
         tf.summary.scalar("losses/attributes_loss", attributes_loss)
         self.attributes_loss = attributes_loss
 
+      # discriminative loss
+      # should be multi-label margin loss, but the loss below is a little different
+      if "discriminative_logits" in outputs:
+        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
+        discriminative_loss = tf.losses.hinge_loss(labels=word_labels,
+                                                   logits=outputs["discriminative_logits"],
+                                                   weights=FLAGS.discriminative_loss_weights)
+        tf.summary.scalar("losses/discriminative_loss", discriminative_loss)
+        self.discriminative_loss = discriminative_loss
+
+
       # Compute losses.
       losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
                                                               logits=logits)
