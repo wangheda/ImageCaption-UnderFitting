@@ -7,6 +7,7 @@ from collections import defaultdict
 import numpy as np
 import pdb
 import math
+import sys
 
 import tensorflow as tf
 
@@ -27,15 +28,20 @@ class CiderScorer(object):
     self.vocab = {}
     with open(vocab_file) as F:
       for line in F:
-        word, count = line.decode("utf8").rstip().split()
-        idx = len(self.vocab) + 1 # starting from 1, make uni-gram's space not overlapping with bi-gram's
+        cols = line.rstrip().split()
+        word = cols[0]
+        if word == "":
+          word = " "
+        # starting from 1, make uni-gram's space not overlapping with bi-gram's
+        idx = len(self.vocab) + 1 
         self.vocab[word] = idx
+      print "len(self.vocab)", len(self.vocab)
     return None
 
-  def word2id(self, sent)
+  def word2id(self, sent):
     if self.vocab is None:
-      self.local_vocab()
-    OOVid = len(self.local_vocab) + 1 # starting from 1
+      self.load_vocab()
+    OOVid = len(self.vocab) + 1 # starting from 1
     words = sent.split()
     ids = map(lambda w: self.vocab.get(w, OOVid), words)
     return ids
@@ -54,14 +60,14 @@ class CiderScorer(object):
     if self.document_frequency is None:
       self.document_frequency = defaultdict(float)
     for refs in self.original_refs:
-      ref_ngrams = [id2ngram(word2id(ref)) for ref in refs]
+      ref_ngrams = [self.id2ngram(self.word2id(ref)) for ref in refs]
       for idx in set([ngram_idx for ngram_idx_lists in ref_ngrams 
                                   for ngram_idx_list in ngram_idx_lists
                                   for ngram_idx in ngram_idx_list]):
         self.document_frequency[idx] += 1
     # For df mapping usage
-    self.df_keys = map(lambda x: x[0], self.documnet_frequency)
-    self.df_values = map(lambda x: x[1], self.documnet_frequency)
+    self.df_keys = map(lambda x: x[0], self.document_frequency.items())
+    self.df_values = map(lambda x: x[1], self.document_frequency.items())
     print >> sys.stderr, "document frequency has %d keys" % len(self.df_keys)
 
   def wordid2nparray(self, word_ids, length=20):
@@ -96,13 +102,12 @@ class CiderScorer(object):
         c[idx] += 1
       return c
 
-    assert len(many_ngrams) == num_refs
     many_array_keys = []
     many_array_values = []
     many_array_lengths = []
 
-    for ngram_lists in many_ngrams:
-      assert len(ngram_lists) == n
+    for ngram_lists in many_ngrams[:num_refs]:
+      assert len(ngram_lists) == n, "%d != %d" % (len(ngram_lists), n)
       ngram_keys = []
       ngram_values = []
       ngram_lengths = []
@@ -121,16 +126,23 @@ class CiderScorer(object):
           idx_values = idx_values + [0.0] * (length - idx_length)
         ngram_keys.append(idx_keys)
         ngram_values.append(idx_values)
-        ngram_lengths.append(idx_lengths)
+        ngram_lengths.append(idx_length)
       
       many_array_keys.append(ngram_keys)
       many_array_values.append(ngram_values)
       many_array_lengths.append(ngram_lengths)
 
+    if len(many_ngrams) < num_refs:
+      print >> sys.stderr, "len(many_ngrams) < num_refs %d < %d" % (len(many_ngrams), num_refs)
+      for _i in range(num_refs - len(many_ngrams)):
+        many_array_keys.append([[0] * length for __i in range(self.n)])
+        many_array_values.append([[0.0] * length for __i in range(self.n)])
+        many_array_lengths.append([0] * self.n)
+
     many_array_keys = np.reshape(np.array(many_array_keys, dtype=np.int64), [1,num_refs,n,length])
     many_array_values = np.reshape(np.array(many_array_values, dtype=np.float), [1,num_refs,n,length])
-    actual_length = np.reshape(np.array(many_array_lengths, dtype=np.int64), [1,num_refs,n])
-    return many_array_keys, many_array_values, actual_length
+    actual_lengths = np.reshape(np.array(many_array_lengths, dtype=np.int64), [1,num_refs,n])
+    return many_array_keys, many_array_values, actual_lengths
 
  
   def copy(self):
@@ -148,9 +160,8 @@ class CiderScorer(object):
     self.crefs = []
     self.ctest = []
     self.document_frequency = None
-    self.original_test = test
-    self.original_refs = refs
-    self.ref_len = np.log(float(len(self.original_refs)))
+    self.original_test = []
+    self.original_refs = []
 
   def size(self):
     assert len(self.crefs) == len(self.ctest), "refs/test mismatch! %d<>%d" % (len(self.crefs), len(self.ctest))
@@ -158,29 +169,42 @@ class CiderScorer(object):
 
   def __iadd__(self, other):
     '''add an instance (e.g., from another sentence).'''
-
     if type(other) is tuple:
       ## avoid creating new CiderScorer instances
-      self.cook_append(other[0], other[1])
+      self.original_test.append(other[0])
+      self.original_refs.append(other[1])
     else:
-      self.ctest.extend(other.ctest)
-      self.crefs.extend(other.crefs)
-
+      self.original_test.extend(other.original_test)
+      self.original_refs.extend(other.original_refs)
     return self
 
   def compute_cider(self):
 
     def build_graph():
+      def log_tensor(name, g=None, l=None):
+        if g is None and l is None:
+          print >> sys.stderr, name, eval(name, {"self":self})
+        else:
+          print >> sys.stderr, name, eval(name, g, l)
+
       self.feed_hyp_words = tf.placeholder(dtype=tf.int64, shape=[1,self.hyp_length])
+      log_tensor("self.feed_hyp_words")
       self.feed_hyp_lengths = tf.placeholder(dtype=tf.int64, shape=[1])
+      log_tensor("self.feed_hyp_lengths")
 
       self.feed_ref_keys = tf.placeholder(dtype=tf.int64, shape=[1,self.num_refs,self.n,self.ref_length])
-      self.feed_ref_values = tf.placeholder(dtype=tf.float, shape=[1,self.num_refs,self.n,self.ref_length])
+      log_tensor("self.feed_ref_keys")
+      self.feed_ref_values = tf.placeholder(dtype=tf.float32, shape=[1,self.num_refs,self.n,self.ref_length])
+      log_tensor("self.feed_ref_values")
       self.feed_ref_lengths = tf.placeholder(dtype=tf.int64, shape=[1,self.num_refs,self.n])
+      log_tensor("self.feed_ref_lengths")
 
       self.df_table = tf.contrib.lookup.HashTable(
           tf.contrib.lookup.KeyValueTensorInitializer(self.df_keys, self.df_values), 0)
-      self.df_table_init = df_table.init
+      log_tensor("self.df_table")
+
+      self.df_table_init = self.df_table.init
+      log_tensor("self.df_table_init")
 
       def ngram_count(words, lengths, ref_keys):
         n = self.n
@@ -193,95 +217,121 @@ class CiderScorer(object):
 
         tmp_shifted = []
         for i in range(n):
-          weights = tf.constant([FLAGS.max_vocab_size**k for k in range(i,-1,-1)], dtype=tf.int64, shape=[i+1])
+          weights = [FLAGS.max_vocab_size**k for k in range(i,-1,-1)]
           if i == 0:
             tmp_shifted.append(words)
           else:
-            tmp_shifted.append(tf.concat([words[:,i:], tf.constant(0, dtype=tf.int64, shape=[1,i]], axis=1))
-          tmp_ngram = tf.einsum("ijk,k->ij", tf.stack(tmp_shifted, axis=2), weights)
+            tmp_shifted.append(tf.concat([words[:,i:], tf.constant(0, dtype=tf.int64, shape=[1,i])], axis=1))
+          tmp_ngram = tf.add_n([x*y for x,y in zip(tmp_shifted, weights)])
+          print >> sys.stderr, "tmp_ngram", tmp_ngram
+
           tmp_ngrams.append(tmp_ngram)  # n-gram ids
           tmp_lengths.append(lengths-i) # bi-gram ids are shorther by 1, etc
 
         tmp_ngrams = tf.stack(tmp_ngrams, axis=1)
         tmp_lengths = tf.stack(tmp_lengths, axis=1)
+        print >> sys.stderr, "tmp_ngrams", tmp_ngrams
 
         tmp_ngrams = tf.reshape(tmp_ngrams, shape=[1,1,n,1,length])
-        tmp_masks = tf.reshape(tf.sequence_mask(tmp_lengths, maxlen=length), shape=[1,1,n,1,length])
-        tmp_ref_keys = tf.reshape(words, shape=[1,num_refs,n,ref_length,1])
+        print >> sys.stderr, "tmp_ngrams", tmp_ngrams
+        tmp_masks = tf.reshape(
+                      tf.sequence_mask(
+                        tf.reshape(tmp_lengths, shape=[-1]), 
+                      maxlen=length), 
+                    shape=[1,1,n,1,length])
+        print >> sys.stderr, "tmp_masks", tmp_masks
+        tmp_ref_keys = tf.reshape(ref_keys, shape=[1,num_refs,n,ref_length,1])
+        print >> sys.stderr, "tmp_ref_keys", tmp_ref_keys
 
-        tmp_masked = tf.logical_and(tmp_words == tmp_ref_keys, tmp_masks)
+        tmp_equal = tf.equal(tmp_ngrams, tmp_ref_keys)
+        log_tensor("tmp_equal", l=locals())
+        tmp_masked = tf.cast(tmp_equal, dtype=tf.float32) * tf.cast(tmp_masks, dtype=tf.float32)
+        log_tensor("tmp_masked", l=locals())
         hyp_count = tf.reduce_sum(tmp_masked, axis=4)
+        log_tensor("hyp_count", l=locals())
         return hyp_count
 
-      def counts2vec(keys, values, masks)
+      def counts2vec(keys, values, masks):
         text_freq_values = values
         doc_freq_values = self.df_table.lookup(keys)
         df_values = tf.log(tf.maximum(doc_freq_values, 1.0))
         vec = text_freq_values * tf.maximum(self.ref_len - df_values, 0.0)
         float_masks = tf.cast(masks, dtype=tf.float32)
-        norm = tf.norm(tfidf_values * float_masks, axis=-1)
+        norm = tf.norm(vec * float_masks, axis=-1)
         return vec, norm
 
-      def sim(vec_hyp, vec_ref, norn_hyp, norm_ref, lengths_hyp, lengths_ref):
-        # to be continued
+      def sim(vec_hyp, vec_ref, norn_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks):
+        delta = tf.reshape(lengths_hyp, shape=[1,1,1]) - lengths_ref
+        delta = tf.cast(delta, tf.float32)
+        mask = tf.cast(ref_masks, dtype=tf.float32)
+        prod = tf.reduce_sum(tf.minimum(vec_hyp, vec_ref) * vec_ref * mask, axis=-1) / (norm_hyp * norm_ref + 1e-9)
+        mult = np.e ** (-(delta ** 2) / ((self.sigma ** 2) * 2))
+        val = prod * mult
+        return val
 
-    def sim(vec_hyp, vec_ref, norm_hyp, norm_ref, length_hyp, length_ref):
-      '''
-      Compute the cosine similarity of two vectors.
-      :param vec_hyp: array of dictionary for vector corresponding to hypothesis
-      :param vec_ref: array of dictionary for vector corresponding to reference
-      :param norm_hyp: array of float for vector corresponding to hypothesis
-      :param norm_ref: array of float for vector corresponding to reference
-      :param length_hyp: int containing length of hypothesis
-      :param length_ref: int containing length of reference
-      :return: array of score for each n-grams cosine similarity
-      '''
-      delta = float(length_hyp - length_ref)
-      # measure consine similarity
-      val = np.array([0.0 for _ in range(self.n)])
-      for n in range(self.n):
-        # ngram
-        for (ngram,count) in vec_hyp[n].iteritems():
-          # vrama91 : added clipping
-          val[n] += min(vec_hyp[n][ngram], vec_ref[n][ngram]) * vec_ref[n][ngram]
+      def score(sim_val, lengths_ref):
+        score = tf.reduce_mean(sim_val, axis=1) # sum over num_ref
+        score_avg = tf.reduce_mean(score, axis=1) # average over n ngrams
+        score_avg = score_avg * 10.0
+        return score_avg
 
-        if (norm_hyp[n] != 0) and (norm_ref[n] != 0):
-          val[n] /= (norm_hyp[n]*norm_ref[n])
-
-        assert(not math.isnan(val[n]))
-        # vrama91: added a length based gaussian penalty
-        val[n] *= np.e**(-(delta**2)/(2*self.sigma**2))
-      return val
-
-    # compute log reference length
-    self.ref_len = np.log(float(len(self.crefs)))
+      hyp_values = ngram_count(self.feed_hyp_words, self.feed_hyp_lengths, self.feed_ref_keys)
+      log_tensor("hyp_values", l=locals())
+      ref_masks = tf.reshape(
+                      tf.sequence_mask(
+                          tf.reshape(self.feed_ref_lengths, shape=[-1]), 
+                          maxlen=self.ref_length),
+                      shape=[1,self.num_refs,self.n,self.ref_length])
+      log_tensor("ref_masks", l=locals())
+      vec_hyp, norm_hyp = counts2vec(self.feed_ref_keys, hyp_values, ref_masks)
+      log_tensor("vec_hyp", l=locals())
+      log_tensor("norm_hyp", l=locals())
+      vec_ref, norm_ref = counts2vec(self.feed_ref_keys, self.feed_ref_values, ref_masks)
+      log_tensor("vec_ref", l=locals())
+      log_tensor("norm_ref", l=locals())
+      lengths_hyp = self.feed_hyp_lengths
+      log_tensor("lengths_hyp", l=locals())
+      lengths_ref = self.feed_ref_lengths
+      log_tensor("lengths_ref", l=locals())
+      sim_val = sim(vec_hyp, vec_ref, norm_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks)
+      log_tensor("sim_val", l=locals())
+      sim_score = score(sim_val)
+      log_tensor("sim_score", l=locals())
+      return sim_score
 
     scores = []
-    for test, refs in zip(self.ctest, self.crefs):
-      # compute vector for test captions
-      vec, norm, length = counts2vec(test)
-      # compute vector for ref captions
-      score = np.array([0.0 for _ in range(self.n)])
-      for ref in refs:
-          vec_ref, norm_ref, length_ref = counts2vec(ref)
-          score += sim(vec, vec_ref, norm, norm_ref, length, length_ref)
-      # change by vrama91 - mean of ngram scores, instead of sum
-      score_avg = np.mean(score)
-      # divide by number of references
-      score_avg /= len(refs)
-      # multiply score by 10
-      score_avg *= 10.0
-      # append score of an image to the score list
-      scores.append(score_avg)
-    return scores
+    with tf.Graph().as_default() as g:
+      self.sim_score = build_graph()
+      with tf.Session() as sess:
+        sess.run(self.df_table_init)
 
+        for test, refs in zip(self.original_test, self.original_refs):
+          hyp_words, hyp_lengths = self.wordid2nparray(self.word2id(test), length=self.hyp_length)
+          refs_ngrams = [self.id2ngram(self.word2id(ref), n=self.n) for ref in refs]
+          ref_keys, ref_values, ref_lengths = self.ngram2nparray(refs_ngrams, num_refs=self.num_refs, n=self.n, length=self.ref_length)
+        
+          feed_dict = {
+              self.feed_hyp_words   : hyp_words,
+              self.feed_hyp_lengths : hyp_lengths,
+              self.feed_ref_keys    : ref_keys,
+              self.feed_ref_values  : ref_values,
+              self.feed_ref_lengths : ref_lengths,
+          }
+
+          sim_score = sess.run(self.sim_score, feed_dict=feed_dict)
+          sim_score = sim_score.flatten().tolist()[0]
+          scores.append(sim_score)
+    return scores
+        
   def compute_score(self, option=None, verbose=0):
+    self.ref_len = np.log(float(len(self.original_refs)))
     # compute idf
     self.compute_doc_freq()
     # assert to check document frequency
-    assert(len(self.ctest) >= max(self.document_frequency.values()))
+    assert(len(self.original_test) >= max(self.document_frequency.values()))
     # compute cider score
     score = self.compute_cider()
     # debug
     # print score
     return np.mean(np.array(score)), np.array(score)
+

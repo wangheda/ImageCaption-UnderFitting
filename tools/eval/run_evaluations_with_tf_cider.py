@@ -30,26 +30,23 @@ def compute_m1(json_predictions_file, reference_file):
     """Compute m1_score"""
     m1_score = {}
     m1_score['error'] = 0
-    try:
-        print >> sys.stderr, "loading reference file"
-        coco = COCO(reference_file)
-        print >> sys.stderr, "loading prediction file"
-        coco_res = coco.loadRes(json_predictions_file)
+    print >> sys.stderr, "loading reference file"
+    coco = COCO(reference_file)
+    print >> sys.stderr, "loading prediction file"
+    coco_res = coco.loadRes(json_predictions_file)
+    
+    # create coco_eval object.
+    print >> sys.stderr, "creating eval ops"
+    coco_eval = COCOEvalCap(coco, coco_res)
+    
+    # evaluate results
+    print >> sys.stderr, "evaluating"
+    coco_eval.evaluate()
 
-        # create coco_eval object.
-        print >> sys.stderr, "creating eval ops"
-        coco_eval = COCOEvalCap(coco, coco_res)
-
-        # evaluate results
-        print >> sys.stderr, "evaluating"
-        coco_eval.evaluate()
-    except Exception:
-        m1_score['error'] = 1
-    else:
-        # print output evaluation scores
-        for metric, score in coco_eval.eval.items():
-            print 'Eval/%s: %.3f'%(metric, score)
-            m1_score[metric] = score
+    # print output evaluation scores
+    for metric, score in coco_eval.eval.items():
+        print 'Eval/%s: %.3f'%(metric, score)
+        m1_score[metric] = score
     return m1_score
 
 
@@ -60,6 +57,8 @@ def main():
                         help=' JSON containing submit sentences.')
     parser.add_argument("-ref", "--ref", type=str,
                         help=' JSON references.')
+    parser.add_argument("-V", "--vocab_file", type=str,
+                        help=' vocab file.')
     args = parser.parse_args()
 
     json_predictions_file = args.submit
