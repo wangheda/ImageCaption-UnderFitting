@@ -298,11 +298,12 @@ class CiderScorer(object):
         df_values = tf.log(tf.maximum(doc_freq_values, 1.0))
         vec = text_freq_values * tf.maximum(self.ref_len - df_values, 0.0)
         float_masks = tf.cast(masks, dtype=tf.float32)
-        norm = tf.sqrt(tf.norm(vec * float_masks, axis=-1))
+        norm = tf.sqrt(tf.reduce_sum(vec * vec * float_masks, axis=-1))
         return vec, norm
 
-      def sim(vec_hyp, vec_ref, norm_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks):
-        delta = tf.reshape(lengths_hyp, shape=[1,1]) - lengths_ref[:,:,0]
+      def sim(vec_hyp, vec_ref, norm_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks, ref_values):
+        actual_ref_lengths = tf.cast(tf.reduce_sum((ref_values * tf.cast(ref_masks, dtype=tf.float32))[:,:,0,:], axis=-1), dtype=tf.int64)
+        delta = tf.reshape(lengths_hyp, shape=[1,1]) - actual_ref_lengths
         delta = tf.cast(delta, tf.float32)
         mask = tf.cast(ref_masks, dtype=tf.float32)
         prod = tf.reduce_sum(tf.minimum(vec_hyp, vec_ref) * vec_ref * mask, axis=-1) / (norm_hyp * norm_ref + 1e-9)
@@ -314,7 +315,7 @@ class CiderScorer(object):
       def score(sim_val, lengths_ref):
         mask = tf.cast(lengths_ref > 0, dtype=tf.float32)
         score_avg = tf.reduce_sum(sim_val * mask, axis=[1,2]) / (tf.reduce_sum(mask, axis=[1,2]) + 1e-9)
-        score_avg = score_avg / tf.reduce_sum(mask[:,:,0], axis=1) *  10.0
+        score_avg = score_avg * 10.0
         return score_avg
 
       hyp_ngrams, hyp_ngram_lengths = ngram_count(self.feed_hyp_words, self.feed_hyp_lengths)
@@ -342,10 +343,17 @@ class CiderScorer(object):
       norm_hyp = compute_norm_for_hyp(hyp_ngrams, hyp_ngram_lengths)
       log_tensor("norm_hyp", l=locals())
 
-      sim_val = sim(vec_hyp, vec_ref, norm_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks)
+      sim_val = sim(vec_hyp, vec_ref, norm_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks, self.feed_ref_values)
       log_tensor("sim_val", l=locals())
       sim_score = score(sim_val, lengths_ref)
       log_tensor("sim_score", l=locals())
+
+      self.vec_ref = vec_ref
+      self.norm_ref = norm_ref
+      self.lengths_ref = lengths_ref
+      self.vec_hyp = vec_hyp
+      self.norm_hyp = norm_hyp
+      self.lengths_hyp = lengths_hyp
       return sim_score
 
     scores = []
@@ -379,11 +387,17 @@ class CiderScorer(object):
           log_array("ref_values", l=locals())
           log_array("ref_lengths", l=locals())
 
-          hyp_values, sim_score = sess.run([self.hyp_values, self.sim_score], feed_dict=feed_dict)
+          vec_ref, norm_ref, lengths_ref, vec_hyp, norm_hyp, lengths_hyp, hyp_values, sim_score = sess.run([self.vec_ref, self.norm_ref, self.lengths_ref, self.vec_hyp, self.norm_hyp, self.lengths_hyp, self.hyp_values, self.sim_score], feed_dict=feed_dict)
           sim_score = sim_score.flatten().tolist()[0]
 
           log_array("hyp_values", l=locals())
           log_array("sim_score", l=locals())
+          log_array("vec_ref", l=locals())
+          log_array("norm_ref", l=locals())
+          log_array("lengths_ref", l=locals())
+          log_array("vec_hyp", l=locals())
+          log_array("norm_hyp", l=locals())
+          log_array("lengths_hyp", l=locals())
           scores.append(sim_score)
     return scores
         

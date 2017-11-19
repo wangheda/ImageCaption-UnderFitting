@@ -6,6 +6,7 @@ import copy
 from collections import defaultdict
 import numpy as np
 import pdb
+import sys
 import math
 
 def precook(s, n=4, out=False):
@@ -165,10 +166,16 @@ class CiderScorer(object):
         for test, refs in zip(self.ctest, self.crefs):
             # compute vector for test captions
             vec, norm, length = counts2vec(test)
+            print >> sys.stderr, "vec_hyp", vec
+            print >> sys.stderr, "norm_hyp", norm
+            print >> sys.stderr, "length_hyp", length
             # compute vector for ref captions
             score = np.array([0.0 for _ in range(self.n)])
             for ref in refs:
                 vec_ref, norm_ref, length_ref = counts2vec(ref)
+                print >> sys.stderr, "vec_ref", vec_ref
+                print >> sys.stderr, "norm_ref", norm_ref
+                print >> sys.stderr, "length_ref", length_ref
                 score += sim(vec, vec_ref, norm, norm_ref, length, length_ref)
             # change by vrama91 - mean of ngram scores, instead of sum
             score_avg = np.mean(score)

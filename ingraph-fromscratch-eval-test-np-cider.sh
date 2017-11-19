@@ -31,12 +31,9 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail
     echo output saved to ${OUTPUT_DIR}/out.json
   fi
 
-  if [ ! -f ${OUTPUT_DIR}/out.eval_with_tf_cider ]; then
-    python ${DIR}/tools/eval/run_evaluations_with_tf_cider.py \
-        --vocab_file=${DIR}/data/word_counts.txt \
-        --submit ${OUTPUT_DIR}/out.json \
-        --ref $VALIDATE_REFERENCE_FILE 2> ${OUTPUT_DIR}/err.eval_with_tf_cider| tee ${OUTPUT_DIR}/out.eval_with_tf_cider | grep ^Eval
-    echo eval result saved to ${OUTPUT_DIR}/out.eval_with_tf_cider
+  if [ ! -f ${OUTPUT_DIR}/out.eval ]; then
+    python ${DIR}/tools/eval/run_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE 2> ${OUTPUT_DIR}/err.eval | tee ${OUTPUT_DIR}/out.eval | grep ^Eval
+    echo eval result saved to ${OUTPUT_DIR}/out.eval
   fi
   exit 1
 done

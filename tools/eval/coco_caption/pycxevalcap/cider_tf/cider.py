@@ -50,6 +50,9 @@ class Cider:
 
         (score, scores) = cider_scorer.compute_score()
 
+        for s in scores:
+            print s
+
         return score, scores
 
     def method(self):
