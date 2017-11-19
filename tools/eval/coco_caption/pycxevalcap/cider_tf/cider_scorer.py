@@ -2,6 +2,9 @@
 # Tsung-Yi Lin <tl483@cornell.edu>
 # Ramakrishna Vedantam <vrama91@vt.edu>
 
+LOG_TENSOR = True
+LOG_NUMPY = False
+
 import copy
 from collections import defaultdict
 import numpy as np
@@ -32,8 +35,7 @@ class CiderScorer(object):
         word = cols[0]
         if word == "":
           word = " "
-        # starting from 1, make uni-gram's space not overlapping with bi-gram's
-        idx = len(self.vocab) + 1 
+        idx = len(self.vocab)
         self.vocab[word] = idx
       print "len(self.vocab)", len(self.vocab)
     return None
@@ -41,7 +43,7 @@ class CiderScorer(object):
   def word2id(self, sent):
     if self.vocab is None:
       self.load_vocab()
-    OOVid = len(self.vocab) + 1 # starting from 1
+    OOVid = len(self.vocab)
     words = sent.split()
     ids = map(lambda w: self.vocab.get(w, OOVid), words)
     return ids
@@ -49,10 +51,11 @@ class CiderScorer(object):
   def id2ngram(self, word_ids, n=4):
     ngrams = [[] for i in range(n)]
     for i in range(n):
-      for j in range(n-i): # idx = word[0] * 10000**3 + word[1] * 10000**2 + word[2] * 10000**1 + word[3]
-        idx = word_ids[j]
+      for j in range(len(word_ids)-i): # idx = word[0] * 10000**3 + word[1] * 10000**2 + word[2] * 10000**1 + word[3]
+        # when computing ngram, we want the word id to start from 1, which is different from other scenarios
+        idx = (word_ids[j] + 1)
         for k in range(i):
-          idx = idx * FLAGS.max_vocab_size + word_ids[j+k+1]
+          idx = idx * FLAGS.max_vocab_size + (word_ids[j+k+1] + 1)
         ngrams[i].append(idx)
     return ngrams
 
@@ -62,8 +65,8 @@ class CiderScorer(object):
     for refs in self.original_refs:
       ref_ngrams = [self.id2ngram(self.word2id(ref)) for ref in refs]
       for idx in set([ngram_idx for ngram_idx_lists in ref_ngrams 
-                                  for ngram_idx_list in ngram_idx_lists
-                                  for ngram_idx in ngram_idx_list]):
+                                for ngram_idx_list in ngram_idx_lists
+                                for ngram_idx in ngram_idx_list]):
         self.document_frequency[idx] += 1
     # For df mapping usage
     self.df_keys = map(lambda x: x[0], self.document_frequency.items())
@@ -180,13 +183,21 @@ class CiderScorer(object):
 
   def compute_cider(self):
 
-    def build_graph():
-      def log_tensor(name, g=None, l=None):
+    def log_tensor(name, g=None, l=None):
+      if LOG_TENSOR:
         if g is None and l is None:
           print >> sys.stderr, name, eval(name, {"self":self})
         else:
           print >> sys.stderr, name, eval(name, g, l)
 
+    def log_array(name, g=None, l=None):
+      if LOG_NUMPY:
+        if g is None and l is None:
+          print >> sys.stderr, name, eval(name, {"self":self})
+        else:
+          print >> sys.stderr, name, eval(name, g, l)
+
+    def build_graph():
       self.feed_hyp_words = tf.placeholder(dtype=tf.int64, shape=[1,self.hyp_length])
       log_tensor("self.feed_hyp_words")
       self.feed_hyp_lengths = tf.placeholder(dtype=tf.int64, shape=[1])
@@ -206,7 +217,7 @@ class CiderScorer(object):
       self.df_table_init = self.df_table.init
       log_tensor("self.df_table_init")
 
-      def ngram_count(words, lengths, ref_keys):
+      def ngram_count(words, lengths):
         n = self.n
         num_refs = self.num_refs
         ref_length = self.ref_length
@@ -216,12 +227,14 @@ class CiderScorer(object):
         tmp_lengths = []
 
         tmp_shifted = []
+        words_idx = words + 1
+        log_tensor("words_idx", l=locals())
         for i in range(n):
           weights = [FLAGS.max_vocab_size**k for k in range(i,-1,-1)]
           if i == 0:
-            tmp_shifted.append(words)
+            tmp_shifted.append(words_idx)
           else:
-            tmp_shifted.append(tf.concat([words[:,i:], tf.constant(0, dtype=tf.int64, shape=[1,i])], axis=1))
+            tmp_shifted.append(tf.concat([words_idx[:,i:], tf.constant(0, dtype=tf.int64, shape=[1,i])], axis=1))
           tmp_ngram = tf.add_n([x*y for x,y in zip(tmp_shifted, weights)])
           print >> sys.stderr, "tmp_ngram", tmp_ngram
 
@@ -231,12 +244,19 @@ class CiderScorer(object):
         tmp_ngrams = tf.stack(tmp_ngrams, axis=1)
         tmp_lengths = tf.stack(tmp_lengths, axis=1)
         print >> sys.stderr, "tmp_ngrams", tmp_ngrams
+        return tmp_ngrams, tmp_lengths
+        
+      def ngram_overlap(ngrams, ngram_lengths, ref_keys):
+        n = self.n
+        num_refs = self.num_refs
+        ref_length = self.ref_length
+        length = self.hyp_length
 
-        tmp_ngrams = tf.reshape(tmp_ngrams, shape=[1,1,n,1,length])
-        print >> sys.stderr, "tmp_ngrams", tmp_ngrams
+        tmp_ngrams = tf.reshape(ngrams, shape=[1,1,n,1,length])
+        print >> sys.stderr, "tmp_ngrams", ngrams
         tmp_masks = tf.reshape(
                       tf.sequence_mask(
-                        tf.reshape(tmp_lengths, shape=[-1]), 
+                        tf.reshape(ngram_lengths, shape=[-1]), 
                       maxlen=length), 
                     shape=[1,1,n,1,length])
         print >> sys.stderr, "tmp_masks", tmp_masks
@@ -247,9 +267,30 @@ class CiderScorer(object):
         log_tensor("tmp_equal", l=locals())
         tmp_masked = tf.cast(tmp_equal, dtype=tf.float32) * tf.cast(tmp_masks, dtype=tf.float32)
         log_tensor("tmp_masked", l=locals())
-        hyp_count = tf.reduce_sum(tmp_masked, axis=4)
+        hyp_count = tf.reduce_sum(tmp_masked, axis=-1)
         log_tensor("hyp_count", l=locals())
         return hyp_count
+
+      def compute_norm_for_hyp(ngrams, ngram_lengths):
+        n = self.n
+        length = self.hyp_length
+        mask = tf.sequence_mask(
+                   tf.reshape(ngram_lengths, shape=[-1]), 
+                   maxlen=length), 
+        float_mask = tf.cast(mask, dtype=tf.float32)
+        square_masks = tf.reshape(float_mask, shape=[1,n,length,1]) * tf.reshape(float_mask, shape=[1,n,1,length])
+        tmp1_ngrams = tf.reshape(ngrams, shape=[1,n,1,length])
+        tmp2_ngrams = tf.reshape(ngrams, shape=[1,n,length,1])
+        tmp12_equal = tf.cast(tf.equal(tmp1_ngrams, tmp2_ngrams), dtype=tf.float32)
+        text_freq = tf.reduce_sum(tmp12_equal * square_masks, axis=-1) + 1e-9
+        doc_freq = self.df_table.lookup(ngrams)
+        df_values = tf.log(tf.maximum(doc_freq, 1.0))
+        vec = text_freq * tf.maximum(self.ref_len - df_values, 0.0)
+        vec_mask = tf.reshape(float_mask, shape=[1,n,length])
+        norm = tf.reduce_sum(vec * vec * vec_mask / text_freq, axis=-1)
+        norm = tf.tile(tf.reshape(norm, shape=[1,1,self.n]), multiples=[1,self.num_refs,1])
+        norm = tf.sqrt(norm)
+        return norm
 
       def counts2vec(keys, values, masks):
         text_freq_values = values
@@ -257,45 +298,53 @@ class CiderScorer(object):
         df_values = tf.log(tf.maximum(doc_freq_values, 1.0))
         vec = text_freq_values * tf.maximum(self.ref_len - df_values, 0.0)
         float_masks = tf.cast(masks, dtype=tf.float32)
-        norm = tf.norm(vec * float_masks, axis=-1)
+        norm = tf.sqrt(tf.norm(vec * float_masks, axis=-1))
         return vec, norm
 
-      def sim(vec_hyp, vec_ref, norn_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks):
-        delta = tf.reshape(lengths_hyp, shape=[1,1,1]) - lengths_ref
+      def sim(vec_hyp, vec_ref, norm_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks):
+        delta = tf.reshape(lengths_hyp, shape=[1,1]) - lengths_ref[:,:,0]
         delta = tf.cast(delta, tf.float32)
         mask = tf.cast(ref_masks, dtype=tf.float32)
         prod = tf.reduce_sum(tf.minimum(vec_hyp, vec_ref) * vec_ref * mask, axis=-1) / (norm_hyp * norm_ref + 1e-9)
         mult = np.e ** (-(delta ** 2) / ((self.sigma ** 2) * 2))
+        mult = tf.reshape(mult, shape=[1,self.num_refs,1])
         val = prod * mult
         return val
 
       def score(sim_val, lengths_ref):
-        score = tf.reduce_mean(sim_val, axis=1) # sum over num_ref
-        score_avg = tf.reduce_mean(score, axis=1) # average over n ngrams
-        score_avg = score_avg * 10.0
+        mask = tf.cast(lengths_ref > 0, dtype=tf.float32)
+        score_avg = tf.reduce_sum(sim_val * mask, axis=[1,2]) / (tf.reduce_sum(mask, axis=[1,2]) + 1e-9)
+        score_avg = score_avg / tf.reduce_sum(mask[:,:,0], axis=1) *  10.0
         return score_avg
 
-      hyp_values = ngram_count(self.feed_hyp_words, self.feed_hyp_lengths, self.feed_ref_keys)
+      hyp_ngrams, hyp_ngram_lengths = ngram_count(self.feed_hyp_words, self.feed_hyp_lengths)
+      hyp_values = ngram_overlap(hyp_ngrams, hyp_ngram_lengths, self.feed_ref_keys)
+      self.hyp_values = hyp_values
       log_tensor("hyp_values", l=locals())
       ref_masks = tf.reshape(
                       tf.sequence_mask(
                           tf.reshape(self.feed_ref_lengths, shape=[-1]), 
                           maxlen=self.ref_length),
                       shape=[1,self.num_refs,self.n,self.ref_length])
-      log_tensor("ref_masks", l=locals())
-      vec_hyp, norm_hyp = counts2vec(self.feed_ref_keys, hyp_values, ref_masks)
-      log_tensor("vec_hyp", l=locals())
-      log_tensor("norm_hyp", l=locals())
-      vec_ref, norm_ref = counts2vec(self.feed_ref_keys, self.feed_ref_values, ref_masks)
-      log_tensor("vec_ref", l=locals())
-      log_tensor("norm_ref", l=locals())
+
       lengths_hyp = self.feed_hyp_lengths
       log_tensor("lengths_hyp", l=locals())
       lengths_ref = self.feed_ref_lengths
       log_tensor("lengths_ref", l=locals())
+      log_tensor("ref_masks", l=locals())
+
+      vec_ref, norm_ref = counts2vec(self.feed_ref_keys, self.feed_ref_values, ref_masks)
+      log_tensor("vec_ref", l=locals())
+      log_tensor("norm_ref", l=locals())
+
+      vec_hyp, _ = counts2vec(self.feed_ref_keys, hyp_values, ref_masks)
+      log_tensor("vec_hyp", l=locals())
+      norm_hyp = compute_norm_for_hyp(hyp_ngrams, hyp_ngram_lengths)
+      log_tensor("norm_hyp", l=locals())
+
       sim_val = sim(vec_hyp, vec_ref, norm_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks)
       log_tensor("sim_val", l=locals())
-      sim_score = score(sim_val)
+      sim_score = score(sim_val, lengths_ref)
       log_tensor("sim_score", l=locals())
       return sim_score
 
@@ -318,8 +367,23 @@ class CiderScorer(object):
               self.feed_ref_lengths : ref_lengths,
           }
 
-          sim_score = sess.run(self.sim_score, feed_dict=feed_dict)
+          log_array("test", l=locals())
+          log_array("refs[0]", l=locals())
+          log_array("refs[1]", l=locals())
+          log_array("refs[2]", l=locals())
+          log_array("refs[3]", l=locals())
+
+          log_array("hyp_words", l=locals())
+          log_array("hyp_lengths", l=locals())
+          log_array("ref_keys", l=locals())
+          log_array("ref_values", l=locals())
+          log_array("ref_lengths", l=locals())
+
+          hyp_values, sim_score = sess.run([self.hyp_values, self.sim_score], feed_dict=feed_dict)
           sim_score = sim_score.flatten().tolist()[0]
+
+          log_array("hyp_values", l=locals())
+          log_array("sim_score", l=locals())
           scores.append(sim_score)
     return scores
         
