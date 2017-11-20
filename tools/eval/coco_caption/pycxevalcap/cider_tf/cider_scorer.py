@@ -181,7 +181,7 @@ class CiderScorer(object):
             log_tensor("tmp_ngram", l=locals())
 
             tmp_ngrams.append(tmp_ngram)  # n-gram ids
-            tmp_lengths.append(lengths-i) # bi-gram ids are shorther by 1, etc
+            tmp_lengths.append(tf.maximum(lengths-i, 0)) # bi-gram ids are shorther by 1, etc
 
           tmp_ngrams = tf.stack(tmp_ngrams, axis=2)
           tmp_lengths = tf.stack(tmp_lengths, axis=2)
@@ -216,12 +216,12 @@ class CiderScorer(object):
           tmp2_ngrams = tf.reshape(ngrams, shape=[batch, num_sents, n, max_length, 1])
           tmp12_equal = tf.cast(tf.equal(tmp1_ngrams, tmp2_ngrams), dtype=tf.float32)
 
-          text_freq = tf.reduce_sum(tmp12_equal * square_masks, axis=-1) + 1e-9
+          text_freq = tf.reduce_sum(tmp12_equal * square_masks, axis=-1)
           doc_freq = self.df_table.lookup(ngrams)
           df_values = tf.log(tf.maximum(doc_freq, 1.0))
 
           vec = text_freq * tf.maximum(self.ref_len - df_values, 0.0)
-          norm = tf.reduce_sum(vec * vec * float_mask / text_freq, axis=-1)
+          norm = tf.reduce_sum(vec * vec * float_mask / (text_freq + 1e-12), axis=-1)
           norm = tf.sqrt(norm)
           return vec, norm, text_freq
 
@@ -266,19 +266,21 @@ class CiderScorer(object):
                                      tf.reshape(hyp_vec, [batch, num_sents, n, max_hyp_length, 1]),
                                      tf.reshape(ref_vec, [batch, num_sents, n, 1, max_ref_length]))
                                      * equal_masks * square_masks,
-                                  axis=-1) / (hyp_tf + 1e-9)
+                                  axis=-1) / (hyp_tf + 1e-12)
           prod = tf.reduce_sum(tf.reshape(min_vec, [batch, num_sents, n, max_hyp_length, 1])
                                    * tf.reshape(ref_vec, [batch, num_sents, n, 1, max_ref_length])
-                                   * equal_masks * square_masks / (freq_masks + 1e-9),
+                                   * equal_masks * square_masks / (freq_masks + 1e-12),
                                axis=[-2,-1])
+
+          val = prod / (hyp_norm * ref_norm + 1e-12)
                                
           mult = np.e ** (-(delta ** 2) / ((sigma ** 2) * 2))
           mask = tf.cast(ref_lengths > 0, dtype=tf.float32)
 
-          scores = prod * tf.expand_dims(mult, axis=2) * tf.expand_dims(mask, axis=2)
+          scores = val * tf.expand_dims(mult, axis=2) * tf.expand_dims(mask, axis=2)
 
           score_avg = tf.reduce_sum(scores, axis=[1,2]) \
-                      / (tf.reduce_sum(mask, axis=1) + 1e-9) / (float(n) + 1e-9)
+                      / (tf.reduce_sum(mask, axis=1) * float(n) + 1e-12)
           score_avg = score_avg * 10.0
           return score_avg
 
@@ -303,6 +305,19 @@ class CiderScorer(object):
         sim_score = sim(hyp_vec, hyp_norm, hyp_text_freq, hyp_lengths, hyp_ngrams, hyp_ngram_lengths,
                         ref_vec, ref_norm, ref_text_freq, ref_lengths, ref_ngrams, ref_ngram_lengths,
                         sigma=sigma)
+
+        self.hyp_vec = hyp_vec
+        self.hyp_norm = hyp_norm
+        self.hyp_text_freq = hyp_text_freq
+        self.hyp_lengths = hyp_lengths
+        self.hyp_ngrams = hyp_ngrams
+        self.hyp_ngram_lengths = hyp_ngram_lengths
+        self.ref_vec = ref_vec
+        self.ref_norm = ref_norm
+        self.ref_text_freq = ref_text_freq
+        self.ref_lengths = ref_lengths
+        self.ref_ngrams = ref_ngrams
+        self.ref_ngram_lengths = ref_ngram_lengths
         return sim_score
 
       self.feed_hyp_words = tf.placeholder(dtype=tf.int64, shape=[1,self.hyp_length])
@@ -354,7 +369,12 @@ class CiderScorer(object):
               self.feed_ref_lengths : refs_lengths,
           }
 
-          sim_score = sess.run(self.sim_score, feed_dict=feed_dict)
+          hyp_vec, hyp_norm, hyp_text_freq, hyp_lengths, hyp_ngrams, hyp_ngram_lengths, \
+          ref_vec, ref_norm, ref_text_freq, ref_lengths, ref_ngrams, ref_ngram_lengths, \
+          sim_score = sess.run(
+                      [self.hyp_vec, self.hyp_norm, self.hyp_text_freq, self.hyp_lengths, self.hyp_ngrams, self.hyp_ngram_lengths,
+                      self.ref_vec, self.ref_norm, self.ref_text_freq, self.ref_lengths, self.ref_ngrams, self.ref_ngram_lengths,
+                      self.sim_score], feed_dict=feed_dict)
           sim_score = sim_score.flatten().tolist()
           scores.extend(sim_score)
     return scores
