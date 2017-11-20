@@ -37,11 +37,7 @@ for part in VALIDATE TRAIN; do
             --lines_per_image=15 \
             --image_dir=$image_dir \
             --output_prefix="rankertrain-${part}-${c}" \
-            --output_dir=$output_dir \
+            --output_dir=$output_dir
   done
 done
-
-
-
-
 
