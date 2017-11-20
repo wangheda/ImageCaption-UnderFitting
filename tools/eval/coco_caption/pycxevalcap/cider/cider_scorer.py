@@ -6,7 +6,6 @@ import copy
 from collections import defaultdict
 import numpy as np
 import pdb
-import sys
 import math
 
 def precook(s, n=4, out=False):
@@ -191,3 +190,4 @@ class CiderScorer(object):
         # debug
         # print score
         return np.mean(np.array(score)), np.array(score)
+
