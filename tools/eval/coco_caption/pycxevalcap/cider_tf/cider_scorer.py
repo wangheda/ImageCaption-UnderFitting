@@ -3,7 +3,7 @@
 # Ramakrishna Vedantam <vrama91@vt.edu>
 
 LOG_TENSOR = True
-LOG_NUMPY = False
+LOG_ARRAY = False
 
 import copy
 from collections import defaultdict
@@ -90,64 +90,6 @@ class CiderScorer(object):
     actual_length = np.reshape(np.array([actual_length], dtype=np.int64), [1])
     return word_array, actual_length
 
-  def ngram2nparray(self, many_ngrams, num_refs=5, n=4, length=30):
-    """
-    preprocess reference
-                     [batch_size, num_refs, num_ngrams, length]
-    into numpy array [1,5,4,30], which is then feed into tf program
-    other than index array, a length array of shape [1,4] is also generated.
-    this may seem peculiar, this is acturally stored as key:value format
-    this will be pre-computed and saved into tfrecords
-    """
-    def count_list(idx_list):
-      c = defaultdict(float)
-      for idx in idx_list:
-        c[idx] += 1
-      return c
-
-    many_array_keys = []
-    many_array_values = []
-    many_array_lengths = []
-
-    for ngram_lists in many_ngrams[:num_refs]:
-      assert len(ngram_lists) == n, "%d != %d" % (len(ngram_lists), n)
-      ngram_keys = []
-      ngram_values = []
-      ngram_lengths = []
-
-      for idx_list in ngram_lists:
-        idx_dict = count_list(idx_list)
-        idx_keys = map(lambda x: x[0], idx_dict.items())
-        idx_values = map(lambda x: x[1], idx_dict.items())
-        idx_length = len(idx_keys)
-        if idx_length >= length:
-          idx_length = length
-          idx_keys = idx_keys[:length]
-          idx_values = idx_values[:length]
-        else:
-          idx_keys = idx_keys + [0] * (length - idx_length)
-          idx_values = idx_values + [0.0] * (length - idx_length)
-        ngram_keys.append(idx_keys)
-        ngram_values.append(idx_values)
-        ngram_lengths.append(idx_length)
-      
-      many_array_keys.append(ngram_keys)
-      many_array_values.append(ngram_values)
-      many_array_lengths.append(ngram_lengths)
-
-    if len(many_ngrams) < num_refs:
-      print >> sys.stderr, "len(many_ngrams) < num_refs %d < %d" % (len(many_ngrams), num_refs)
-      for _i in range(num_refs - len(many_ngrams)):
-        many_array_keys.append([[0] * length for __i in range(self.n)])
-        many_array_values.append([[0.0] * length for __i in range(self.n)])
-        many_array_lengths.append([0] * self.n)
-
-    many_array_keys = np.reshape(np.array(many_array_keys, dtype=np.int64), [1,num_refs,n,length])
-    many_array_values = np.reshape(np.array(many_array_values, dtype=np.float), [1,num_refs,n,length])
-    actual_lengths = np.reshape(np.array(many_array_lengths, dtype=np.int64), [1,num_refs,n])
-    return many_array_keys, many_array_values, actual_lengths
-
- 
   def copy(self):
     ''' copy the refs.'''
     raise NotImplementedError("This should not be called")
@@ -191,23 +133,186 @@ class CiderScorer(object):
           print >> sys.stderr, name, eval(name, g, l)
 
     def log_array(name, g=None, l=None):
-      if LOG_NUMPY:
+      if LOG_ARRAY:
         if g is None and l is None:
           print >> sys.stderr, name, eval(name, {"self":self})
         else:
           print >> sys.stderr, name, eval(name, g, l)
 
     def build_graph():
+
+      def score(hyp_words, hyp_lengths, ref_words, ref_lengths, sigma=6.0):
+        """
+        parameters
+        hyp_words:   [batch, hyp_length]
+        hyp_lengths: [batch]
+        ref_words:   [batch, num_refs, hyp_length]
+        ref_lengths: [batch, num_refs]
+        return
+        score:       [batch]
+        """
+
+        def ngram_count(words, lengths, n=4):
+          shape = words.get_shape().as_list()
+          if len(shape) == 2:
+            num_sents = 1
+            batch, max_length = shape
+            words = tf.reshape(words, [batch, num_sents, max_length])
+            lengths = tf.reshape(lengths, [batch, num_sents])
+          elif len(shape) == 3:
+            batch, num_sents, max_length = shape
+          else:
+            raise NotImplementedError("tensor must be of rank 2 or 3")
+          
+          tmp_ngrams = []
+          tmp_lengths = []
+          tmp_shifted = []
+
+          words_idx = words + 1
+          log_tensor("words_idx", l=locals())
+
+          for i in range(n):
+            weights = [FLAGS.max_vocab_size**k for k in range(i,-1,-1)]
+            if i == 0:
+              tmp_shifted.append(words_idx)
+            else:
+              tmp_shifted.append(tf.concat([words_idx[:,:,i:], tf.constant(0, dtype=tf.int64, shape=[batch,num_sents,i])], axis=-1))
+            tmp_ngram = tf.add_n([x*y for x,y in zip(tmp_shifted, weights)])
+            log_tensor("tmp_ngram", l=locals())
+
+            tmp_ngrams.append(tmp_ngram)  # n-gram ids
+            tmp_lengths.append(lengths-i) # bi-gram ids are shorther by 1, etc
+
+          tmp_ngrams = tf.stack(tmp_ngrams, axis=2)
+          tmp_lengths = tf.stack(tmp_lengths, axis=2)
+          log_tensor("tmp_ngrams", l=locals())
+          log_tensor("tmp_lengths", l=locals())
+          return tmp_ngrams, tmp_lengths
+        
+        def compute_vec_norm_and_freq(ngrams, ngram_lengths):
+          """
+          parameters
+          ngrams        : [batch, num_sents, n, max_length]
+          ngram_lengths : [batch, num_sents, n]
+          return
+          vec           : [batch, num_sents, n, max_length] tfidf values of every ngram
+          norm          : [batch, num_sents, n]
+          text_freq     : [batch, num_sents, n, max_length]
+          """
+          shape = ngrams.get_shape().as_list()
+          batch, num_sents, n, max_length = shape
+
+          mask = tf.reshape(
+                    tf.sequence_mask(
+                      tf.reshape(ngram_lengths, shape=[-1]), 
+                      maxlen=max_length), 
+                    shape=[batch, num_sents, n, max_length])
+          float_mask = tf.cast(mask, dtype=tf.float32)
+
+          square_masks = tf.reshape(float_mask, shape=[batch, num_sents, n, max_length, 1]) \
+                         * tf.reshape(float_mask, shape=[batch, num_sents, n, 1, max_length])
+
+          tmp1_ngrams = tf.reshape(ngrams, shape=[batch, num_sents, n, 1, max_length])
+          tmp2_ngrams = tf.reshape(ngrams, shape=[batch, num_sents, n, max_length, 1])
+          tmp12_equal = tf.cast(tf.equal(tmp1_ngrams, tmp2_ngrams), dtype=tf.float32)
+
+          text_freq = tf.reduce_sum(tmp12_equal * square_masks, axis=-1) + 1e-9
+          doc_freq = self.df_table.lookup(ngrams)
+          df_values = tf.log(tf.maximum(doc_freq, 1.0))
+
+          vec = text_freq * tf.maximum(self.ref_len - df_values, 0.0)
+          norm = tf.reduce_sum(vec * vec * float_mask / text_freq, axis=-1)
+          norm = tf.sqrt(norm)
+          return vec, norm, text_freq
+
+        def sim(hyp_vec, hyp_norm, hyp_tf, hyp_lengths, hyp_ngrams, hyp_ngram_lengths,
+                ref_vec, ref_norm, ref_tf, ref_lengths, ref_ngrams, ref_ngram_lengths,
+                sigma=6.0):
+          """
+          parameters
+          vec           : [batch, num_sents, n, max_length] tfidf values of every ngram
+          norm          : [batch, num_sents, n]
+          tf            : [batch, num_sents, n, max_length]
+          lengths       : [batch, num_sents, n]
+          ngrams        : [batch, num_sents, n, max_length]
+          ngram_lengths : [batch, num_sents, n]
+          return 
+          score         : [batch]
+          """
+          batch, num_sents, n, max_hyp_length = hyp_vec.get_shape().as_list()
+          _, _, _, max_ref_length = ref_vec.get_shape().as_list()
+
+          delta = tf.cast(hyp_lengths - ref_lengths, tf.float32)
+
+          ref_masks = tf.cast(tf.reshape(
+                        tf.sequence_mask(
+                          tf.reshape(ref_ngram_lengths, shape=[-1]), 
+                          maxlen=max_ref_length), 
+                        shape=[batch, num_sents, n, max_ref_length]), dtype=tf.float32)
+          hyp_masks = tf.cast(tf.reshape(
+                        tf.sequence_mask(
+                          tf.reshape(hyp_ngram_lengths, shape=[-1]), 
+                          maxlen=max_hyp_length), 
+                        shape=[batch, num_sents, n, max_hyp_length]), dtype=tf.float32)
+          square_masks = tf.reshape(hyp_masks, shape=[batch, num_sents, n, max_hyp_length, 1]) \
+                         * tf.reshape(ref_masks, shape=[batch, num_sents, n, 1, max_ref_length])
+          freq_masks = tf.reshape(hyp_tf, shape=[batch, num_sents, n, max_hyp_length, 1]) \
+                         * tf.reshape(ref_tf, shape=[batch, num_sents, n, 1, max_ref_length])
+          equal_masks = tf.cast(tf.equal(
+                             tf.reshape(hyp_ngrams, shape=[batch, num_sents, n, max_hyp_length, 1]), 
+                             tf.reshape(ref_ngrams, shape=[batch, num_sents, n, 1, max_ref_length])
+                                        ), dtype=tf.float32)
+          min_vec = tf.reduce_sum(tf.minimum(
+                                     tf.reshape(hyp_vec, [batch, num_sents, n, max_hyp_length, 1]),
+                                     tf.reshape(ref_vec, [batch, num_sents, n, 1, max_ref_length]))
+                                     * equal_masks * square_masks,
+                                  axis=-1) / (hyp_tf + 1e-9)
+          prod = tf.reduce_sum(tf.reshape(min_vec, [batch, num_sents, n, max_hyp_length, 1])
+                                   * tf.reshape(ref_vec, [batch, num_sents, n, 1, max_ref_length])
+                                   * equal_masks * square_masks / (freq_masks + 1e-9),
+                               axis=[-2,-1])
+                               
+          mult = np.e ** (-(delta ** 2) / ((sigma ** 2) * 2))
+          mask = tf.cast(ref_lengths > 0, dtype=tf.float32)
+
+          scores = prod * tf.expand_dims(mult, axis=2) * tf.expand_dims(mask, axis=2)
+
+          score_avg = tf.reduce_sum(scores, axis=[1,2]) \
+                      / (tf.reduce_sum(mask, axis=1) + 1e-9) / (float(n) + 1e-9)
+          score_avg = score_avg * 10.0
+          return score_avg
+
+        def tile_on_axis(tensor, axis=1, copies=5):
+          shape = tensor.get_shape().as_list()
+          multiples = [1] * len(shape)
+          multiples[axis] = copies
+          return tf.tile(tensor, multiples=multiples)
+
+        ref_ngrams, ref_ngram_lengths = ngram_count(ref_words, ref_lengths)
+        ref_vec, ref_norm, ref_text_freq = compute_vec_norm_and_freq(ref_ngrams, ref_ngram_lengths)
+
+        hyp_ngrams, hyp_ngram_lengths = ngram_count(hyp_words, hyp_lengths)
+        hyp_vec, hyp_norm, hyp_text_freq = compute_vec_norm_and_freq(hyp_ngrams, hyp_ngram_lengths)
+
+        ref_vec_shape = ref_vec.get_shape().as_list()
+        num_refs = ref_vec_shape[1]
+        hyp_ngrams, hyp_ngram_lengths, hyp_vec, hyp_norm, hyp_text_freq = map(
+                lambda x: tile_on_axis(x, axis=1, copies=num_refs),
+                [hyp_ngrams, hyp_ngram_lengths, hyp_vec, hyp_norm, hyp_text_freq])
+
+        sim_score = sim(hyp_vec, hyp_norm, hyp_text_freq, hyp_lengths, hyp_ngrams, hyp_ngram_lengths,
+                        ref_vec, ref_norm, ref_text_freq, ref_lengths, ref_ngrams, ref_ngram_lengths,
+                        sigma=sigma)
+        return sim_score
+
       self.feed_hyp_words = tf.placeholder(dtype=tf.int64, shape=[1,self.hyp_length])
-      log_tensor("self.feed_hyp_words")
       self.feed_hyp_lengths = tf.placeholder(dtype=tf.int64, shape=[1])
+      log_tensor("self.feed_hyp_words")
       log_tensor("self.feed_hyp_lengths")
 
-      self.feed_ref_keys = tf.placeholder(dtype=tf.int64, shape=[1,self.num_refs,self.n,self.ref_length])
-      log_tensor("self.feed_ref_keys")
-      self.feed_ref_values = tf.placeholder(dtype=tf.float32, shape=[1,self.num_refs,self.n,self.ref_length])
-      log_tensor("self.feed_ref_values")
-      self.feed_ref_lengths = tf.placeholder(dtype=tf.int64, shape=[1,self.num_refs,self.n])
+      self.feed_ref_words = tf.placeholder(dtype=tf.int64, shape=[1,self.num_refs,self.ref_length])
+      self.feed_ref_lengths = tf.placeholder(dtype=tf.int64, shape=[1,self.num_refs])
+      log_tensor("self.feed_ref_words")
       log_tensor("self.feed_ref_lengths")
 
       self.df_table = tf.contrib.lookup.HashTable(
@@ -217,146 +322,11 @@ class CiderScorer(object):
       self.df_table_init = self.df_table.init
       log_tensor("self.df_table_init")
 
-      def ngram_count(words, lengths):
-        n = self.n
-        num_refs = self.num_refs
-        ref_length = self.ref_length
-        length = self.hyp_length
-        
-        tmp_ngrams = []
-        tmp_lengths = []
-
-        tmp_shifted = []
-        words_idx = words + 1
-        log_tensor("words_idx", l=locals())
-        for i in range(n):
-          weights = [FLAGS.max_vocab_size**k for k in range(i,-1,-1)]
-          if i == 0:
-            tmp_shifted.append(words_idx)
-          else:
-            tmp_shifted.append(tf.concat([words_idx[:,i:], tf.constant(0, dtype=tf.int64, shape=[1,i])], axis=1))
-          tmp_ngram = tf.add_n([x*y for x,y in zip(tmp_shifted, weights)])
-          print >> sys.stderr, "tmp_ngram", tmp_ngram
-
-          tmp_ngrams.append(tmp_ngram)  # n-gram ids
-          tmp_lengths.append(lengths-i) # bi-gram ids are shorther by 1, etc
-
-        tmp_ngrams = tf.stack(tmp_ngrams, axis=1)
-        tmp_lengths = tf.stack(tmp_lengths, axis=1)
-        print >> sys.stderr, "tmp_ngrams", tmp_ngrams
-        return tmp_ngrams, tmp_lengths
-        
-      def ngram_overlap(ngrams, ngram_lengths, ref_keys):
-        n = self.n
-        num_refs = self.num_refs
-        ref_length = self.ref_length
-        length = self.hyp_length
-
-        tmp_ngrams = tf.reshape(ngrams, shape=[1,1,n,1,length])
-        print >> sys.stderr, "tmp_ngrams", ngrams
-        tmp_masks = tf.reshape(
-                      tf.sequence_mask(
-                        tf.reshape(ngram_lengths, shape=[-1]), 
-                      maxlen=length), 
-                    shape=[1,1,n,1,length])
-        print >> sys.stderr, "tmp_masks", tmp_masks
-        tmp_ref_keys = tf.reshape(ref_keys, shape=[1,num_refs,n,ref_length,1])
-        print >> sys.stderr, "tmp_ref_keys", tmp_ref_keys
-
-        tmp_equal = tf.equal(tmp_ngrams, tmp_ref_keys)
-        log_tensor("tmp_equal", l=locals())
-        tmp_masked = tf.cast(tmp_equal, dtype=tf.float32) * tf.cast(tmp_masks, dtype=tf.float32)
-        log_tensor("tmp_masked", l=locals())
-        hyp_count = tf.reduce_sum(tmp_masked, axis=-1)
-        log_tensor("hyp_count", l=locals())
-        return hyp_count
-
-      def compute_norm_for_hyp(ngrams, ngram_lengths):
-        n = self.n
-        length = self.hyp_length
-        mask = tf.sequence_mask(
-                   tf.reshape(ngram_lengths, shape=[-1]), 
-                   maxlen=length), 
-        float_mask = tf.cast(mask, dtype=tf.float32)
-        square_masks = tf.reshape(float_mask, shape=[1,n,length,1]) * tf.reshape(float_mask, shape=[1,n,1,length])
-        tmp1_ngrams = tf.reshape(ngrams, shape=[1,n,1,length])
-        tmp2_ngrams = tf.reshape(ngrams, shape=[1,n,length,1])
-        tmp12_equal = tf.cast(tf.equal(tmp1_ngrams, tmp2_ngrams), dtype=tf.float32)
-        text_freq = tf.reduce_sum(tmp12_equal * square_masks, axis=-1) + 1e-9
-        doc_freq = self.df_table.lookup(ngrams)
-        df_values = tf.log(tf.maximum(doc_freq, 1.0))
-        vec = text_freq * tf.maximum(self.ref_len - df_values, 0.0)
-        vec_mask = tf.reshape(float_mask, shape=[1,n,length])
-        norm = tf.reduce_sum(vec * vec * vec_mask / text_freq, axis=-1)
-        norm = tf.tile(tf.reshape(norm, shape=[1,1,self.n]), multiples=[1,self.num_refs,1])
-        norm = tf.sqrt(norm)
-        return norm
-
-      def counts2vec(keys, values, masks):
-        text_freq_values = values
-        doc_freq_values = self.df_table.lookup(keys)
-        df_values = tf.log(tf.maximum(doc_freq_values, 1.0))
-        vec = text_freq_values * tf.maximum(self.ref_len - df_values, 0.0)
-        float_masks = tf.cast(masks, dtype=tf.float32)
-        norm = tf.sqrt(tf.reduce_sum(vec * vec * float_masks, axis=-1))
-        return vec, norm
-
-      def sim(vec_hyp, vec_ref, norm_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks, ref_values):
-        actual_ref_lengths = tf.cast(tf.reduce_sum((ref_values * tf.cast(ref_masks, dtype=tf.float32))[:,:,0,:], axis=-1), dtype=tf.int64)
-        delta = tf.reshape(lengths_hyp, shape=[1,1]) - actual_ref_lengths
-        delta = tf.cast(delta, tf.float32)
-        mask = tf.cast(ref_masks, dtype=tf.float32)
-        prod = tf.reduce_sum(tf.minimum(vec_hyp, vec_ref) * vec_ref * mask, axis=-1) / (norm_hyp * norm_ref + 1e-9)
-        mult = np.e ** (-(delta ** 2) / ((self.sigma ** 2) * 2))
-        mult = tf.reshape(mult, shape=[1,self.num_refs,1])
-        val = prod * mult
-        return val
-
-      def score(sim_val, lengths_ref):
-        mask = tf.cast(lengths_ref > 0, dtype=tf.float32)
-        score_avg = tf.reduce_sum(sim_val * mask, axis=[1,2]) / (tf.reduce_sum(mask, axis=[1,2]) + 1e-9)
-        score_avg = score_avg * 10.0
-        return score_avg
-
-      hyp_ngrams, hyp_ngram_lengths = ngram_count(self.feed_hyp_words, self.feed_hyp_lengths)
-      hyp_values = ngram_overlap(hyp_ngrams, hyp_ngram_lengths, self.feed_ref_keys)
-      self.hyp_values = hyp_values
-      log_tensor("hyp_values", l=locals())
-      ref_masks = tf.reshape(
-                      tf.sequence_mask(
-                          tf.reshape(self.feed_ref_lengths, shape=[-1]), 
-                          maxlen=self.ref_length),
-                      shape=[1,self.num_refs,self.n,self.ref_length])
-
-      lengths_hyp = self.feed_hyp_lengths
-      log_tensor("lengths_hyp", l=locals())
-      lengths_ref = self.feed_ref_lengths
-      log_tensor("lengths_ref", l=locals())
-      log_tensor("ref_masks", l=locals())
-
-      vec_ref, norm_ref = counts2vec(self.feed_ref_keys, self.feed_ref_values, ref_masks)
-      log_tensor("vec_ref", l=locals())
-      log_tensor("norm_ref", l=locals())
-
-      vec_hyp, _ = counts2vec(self.feed_ref_keys, hyp_values, ref_masks)
-      log_tensor("vec_hyp", l=locals())
-      norm_hyp = compute_norm_for_hyp(hyp_ngrams, hyp_ngram_lengths)
-      log_tensor("norm_hyp", l=locals())
-
-      sim_val = sim(vec_hyp, vec_ref, norm_hyp, norm_ref, lengths_hyp, lengths_ref, ref_masks, self.feed_ref_values)
-      log_tensor("sim_val", l=locals())
-      sim_score = score(sim_val, lengths_ref)
-      log_tensor("sim_score", l=locals())
-
-      self.vec_ref = vec_ref
-      self.norm_ref = norm_ref
-      self.lengths_ref = lengths_ref
-      self.vec_hyp = vec_hyp
-      self.norm_hyp = norm_hyp
-      self.lengths_hyp = lengths_hyp
+      sim_score = score(self.feed_hyp_words, self.feed_hyp_lengths, self.feed_ref_words, self.feed_ref_lengths)
       return sim_score
 
     scores = []
+    num_refs = self.num_refs
     with tf.Graph().as_default() as g:
       self.sim_score = build_graph()
       with tf.Session() as sess:
@@ -364,41 +334,29 @@ class CiderScorer(object):
 
         for test, refs in zip(self.original_test, self.original_refs):
           hyp_words, hyp_lengths = self.wordid2nparray(self.word2id(test), length=self.hyp_length)
-          refs_ngrams = [self.id2ngram(self.word2id(ref), n=self.n) for ref in refs]
-          ref_keys, ref_values, ref_lengths = self.ngram2nparray(refs_ngrams, num_refs=self.num_refs, n=self.n, length=self.ref_length)
-        
+
+          refs_words, refs_lengths = [], []
+          for ref in refs[:num_refs]:
+            ref_words, ref_lengths = self.wordid2nparray(self.word2id(ref), length=self.ref_length)
+            refs_words.append(ref_words)
+            refs_lengths.append(ref_lengths)
+          for i in xrange(num_refs - len(refs)):
+            refs_words.append(np.zeros([1,self.ref_length], dtype=np.int64))
+            refs_lengths.append(np.zeros([1], dtype=np.int64))
+            
+          refs_words = np.stack(refs_words, axis=1)
+          refs_lengths = np.stack(refs_lengths, axis=1)
+
           feed_dict = {
               self.feed_hyp_words   : hyp_words,
               self.feed_hyp_lengths : hyp_lengths,
-              self.feed_ref_keys    : ref_keys,
-              self.feed_ref_values  : ref_values,
-              self.feed_ref_lengths : ref_lengths,
+              self.feed_ref_words   : refs_words,
+              self.feed_ref_lengths : refs_lengths,
           }
 
-          log_array("test", l=locals())
-          log_array("refs[0]", l=locals())
-          log_array("refs[1]", l=locals())
-          log_array("refs[2]", l=locals())
-          log_array("refs[3]", l=locals())
-
-          log_array("hyp_words", l=locals())
-          log_array("hyp_lengths", l=locals())
-          log_array("ref_keys", l=locals())
-          log_array("ref_values", l=locals())
-          log_array("ref_lengths", l=locals())
-
-          vec_ref, norm_ref, lengths_ref, vec_hyp, norm_hyp, lengths_hyp, hyp_values, sim_score = sess.run([self.vec_ref, self.norm_ref, self.lengths_ref, self.vec_hyp, self.norm_hyp, self.lengths_hyp, self.hyp_values, self.sim_score], feed_dict=feed_dict)
-          sim_score = sim_score.flatten().tolist()[0]
-
-          log_array("hyp_values", l=locals())
-          log_array("sim_score", l=locals())
-          log_array("vec_ref", l=locals())
-          log_array("norm_ref", l=locals())
-          log_array("lengths_ref", l=locals())
-          log_array("vec_hyp", l=locals())
-          log_array("norm_hyp", l=locals())
-          log_array("lengths_hyp", l=locals())
-          scores.append(sim_score)
+          sim_score = sess.run(self.sim_score, feed_dict=feed_dict)
+          sim_score = sim_score.flatten().tolist()
+          scores.extend(sim_score)
     return scores
         
   def compute_score(self, option=None, verbose=0):
