@@ -137,6 +137,7 @@ def _bytes_feature_list(values):
     """Wrapper for inserting a bytes FeatureList into a SequenceExample proto."""
     return tf.train.FeatureList(feature=[_bytes_feature(v) for v in values])
 
+# remove duplicated captions, and sort captions with scores
 def pad_or_truncate(input_caption_ids, caption_scores, maxlen):
     seqlens, caption_ids, scores = [], [], []
     num_caption = len(input_caption_ids)
@@ -145,7 +146,7 @@ def pad_or_truncate(input_caption_ids, caption_scores, maxlen):
         c = str(caption)
         if c not in caption_score_dict:
             caption_score_dict[c] = score
-    for c, score in caption_score_dict.items():
+    for c, score in sorted(caption_score_dict.items(), key=lambda x:x[1], reverse=True):
         c = eval(c)
         if len(c) >= maxlen:
             caption_ids.extend(c[:maxlen])
