@@ -44,7 +44,7 @@ tf.flags.DEFINE_string("word_counts_input_file",
                        "use existing word_counts_file.")
 
 # output files
-tf.flags.DEFINE_string("output_dir", "data/Ranker_TFRecord_data", "Output directory for tfrecords.")
+tf.flags.DEFINE_string("output_dir", "data/New_Ranker_data/5170e21e04710bdcf3f85cffc39bee4d0acc0e74", "Output directory for tfrecords.")
 tf.flags.DEFINE_string("output_prefix", "ranker", "Output prefix for tfrecords.")
 
 # words parameters
@@ -230,8 +230,8 @@ def _load_and_process_metadata(input_file, image_dir):
                 image_ids.add(image_id)
                 image_filenames[image_id] = os.path.join(image_dir, image_id + ".jpg")
                 image_captions[image_id] = []
-                image_neg_captions[image_id] = []
-            image_captions[image_id].append(_process_caption_jieba(pos))
+                image_caption_scores[image_id] = []
+            image_captions[image_id].append(_process_caption_jieba(caption))
             image_caption_scores[image_id].append(score)
                 
     image_metadata = []
