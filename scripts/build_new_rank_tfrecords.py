@@ -137,16 +137,28 @@ def _bytes_feature_list(values):
     """Wrapper for inserting a bytes FeatureList into a SequenceExample proto."""
     return tf.train.FeatureList(feature=[_bytes_feature(v) for v in values])
 
-def pad_or_truncate(input_caption_ids, maxlen):
-    seqlens, caption_ids = [], []
-    for c in input_caption_ids:
+def pad_or_truncate(input_caption_ids, caption_scores, maxlen):
+    seqlens, caption_ids, scores = [], [], []
+    num_caption = len(input_caption_ids)
+    caption_score_dict = {}
+    for caption, score in zip(input_caption_ids, caption_scores):
+        c = str(caption)
+        if c not in caption_score_dict:
+            caption_score_dict[c] = score
+    for c, score in caption_score_dict.items():
+        c = eval(c)
         if len(c) >= maxlen:
             caption_ids.extend(c[:maxlen])
             seqlens.append(maxlen)
         else:
             caption_ids.extend(c + [0] * (maxlen - len(c)))
             seqlens.append(len(c))
-    return seqlens, caption_ids
+        scores.append(score)
+    for i in range(num_caption - len(caption_score_dict)):
+        caption_ids.extend([0]* maxlen)
+        seqlens.append(0)
+        scores.append(0.0)
+    return seqlens, caption_ids, scores
 
 def _to_sequence_example(image_id, image_filename, image_captions, caption_scores, decoder, vocab):
     """Builds a SequenceExample proto for an image-caption pair.
@@ -169,7 +181,7 @@ def _to_sequence_example(image_id, image_filename, image_captions, caption_score
 
     caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image_captions]
 
-    seqlens, caption_ids = pad_or_truncate(caption_ids, FLAGS.maxlen)
+    seqlens, caption_ids, caption_scores = pad_or_truncate(caption_ids, caption_scores, FLAGS.maxlen)
 
     features = tf.train.Features(feature={
         "image/id": _bytes_feature(image_id),
