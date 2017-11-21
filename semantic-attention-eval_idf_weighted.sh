@@ -2,7 +2,7 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="semantic_attention_model_join"
+model_name="semantic_attention_model_join_idf_weighted"
 num_processes=2
 gpu_fraction=0.45
 device=1

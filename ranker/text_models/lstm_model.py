@@ -1,5 +1,7 @@
 
 import tensorflow as tf
+from tensorflow.python.util import nest
+import custom_rnn_cell
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -46,16 +48,21 @@ class LstmModel(object):
       else:
         lstm_cell = tf.contrib.rnn.BasicLSTMCell(
                     num_units=FLAGS.num_lstm_units, state_is_tuple=True)
-    elif FLAGS.lstm_cell_type == "highway":
+    elif FLAGS.lstm_cell_type in ["residual", "highway", "fast_forward"]:
+      wrapper_class_dict = {"residual":     tf.contrib.rnn.ResidualWrapper,
+                            "highway":      tf.contrib.rnn.HighwayWrapper,
+                            "fast_forward": custom_rnn_cell.FastForwardWrapper}
+      wrapper_class = wrapper_class_dict.get(FLAGS.lstm_cell_type)
+
       if FLAGS.num_lstm_layers > 1:
         lstm_cell = tf.contrib.rnn.MultiRNNCell([
-                    tf.contrib.rnn.HighwayWrapper(
+                    wrapper_class(
                         cell=tf.contrib.rnn.BasicLSTMCell(
                         num_units=FLAGS.num_lstm_units, state_is_tuple=True)
                     )
                     for i in xrange(FLAGS.num_lstm_layers)], state_is_tuple=True)
       else:
-        lstm_cell = tf.contrib.rnn.HighwayWrapper(
+        lstm_cell = wrapper_class(
                     cell=tf.contrib.rnn.BasicLSTMCell(
                         num_units=FLAGS.num_lstm_units, state_is_tuple=True))
     else:

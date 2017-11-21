@@ -19,13 +19,13 @@ if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
   echo "model_checkpoint_path: \"${MODEL_DIR}/${model_dir_name}/model.ckpt-${start_ckpt}\"" > ${MODEL_DIR}/${model_dir_name}/checkpoint
 fi
 
-cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
+cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
   --model=${model} \
   --support_ingraph=True \
-  --number_of_steps=600000 \
+  --number_of_steps=800000 \
   --initial_learning_rate=4.6 \
   --learning_rate_decay_factor=0.6 \
   --attributes_top_k=15 \

@@ -2,11 +2,11 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_advanced_model_vis_sem_attention_finetune_with_decay"
-num_processes=1
-gpu_fraction=1.0
-device=0
-model=ShowAndTellAdvancedModel
+model_name="review_network_model"
+num_processes=2
+gpu_fraction=0.45
+device=1
+model=ReviewNetworkModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
 for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do 
@@ -29,19 +29,10 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --vocab_file=${DIR}/data/word_counts.txt \
         --output=${OUTPUT_DIR}/part-${prefix}.json \
         --model=${model} \
-        --inception_return_tuple=True \
-        --use_attention_wrapper=True \
-        --attention_mechanism=BahdanauAttention \
-        --num_lstm_layers=1 \
-        --predict_words_via_image_output=True \
-        --use_semantic_attention=True \
-        --use_separate_embedding_for_semantic_attention=True \
-        --weight_semantic_memory_with_soft_prediction=True \
-        --semantic_attention_word_hash_depth=128 \
         --support_ingraph=True \
         --gpu_memory_fraction=$gpu_fraction"
     fi
-  done | bash #parallel -j $num_processes
+  done | parallel -j $num_processes
 
   if [ ! -f ${OUTPUT_DIR}/out.json ]; then
     python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json
