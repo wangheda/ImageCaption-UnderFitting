@@ -103,7 +103,7 @@ class ShowAndTellInGraphModel(object):
             helper=greedy_helper,
             initial_state=initial_state,
             output_layer=output_layer)
-          greedy_outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(
+          greedy_outputs, _ , greedy_outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
             decoder=greedy_decoder,
             output_time_major=False,
             impute_finished=False)
@@ -153,7 +153,8 @@ class ShowAndTellInGraphModel(object):
       if FLAGS.rl_train == True:
         return {"sample_results": outputs, 
                 "sample_results_sequence_lengths": outputs_sequence_lengths, 
-                "greedy_results": greedy_outputs}
+                "greedy_results": greedy_outputs,
+                "greedy_results_sequence_lengths": greedy_outputs_sequence_lengths,}
       else:
         logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
         return {"logits": logits}

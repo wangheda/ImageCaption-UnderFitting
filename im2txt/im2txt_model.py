@@ -29,6 +29,7 @@ import im2txt_models
 from train_utils import image_embedding
 from train_utils import image_processing
 from train_utils import inputs as input_ops
+from tf_cider import TFCiderScorer
 
 tf.flags.DEFINE_string("model", "ShowAndTellModel",
                         "The model.")
@@ -336,21 +337,36 @@ class Im2TxtModel(object):
       # caption loss
       if FLAGS.rl_train == True:
         # rl loss
-        def score(caption, gt_caption):
-          # The score function needs to finish
-          return tf.ones([FLAGS.batch_size], tf.float32)
         # load greed caption and sample caption to calculate reward
         greedy_captions = outputs["greedy_results"].sample_id
+        greedy_captions_sequence_lengths = outputs["greedy_results_sequence_lengths"]
         sample_captions = outputs["sample_results"].sample_id
         sample_captions_sequence_lengths = outputs["sample_results_sequence_lengths"]
+
+        print("rl debug:")
+        print("greedy_captions:", greedy_captions)
+        print("sample_captions:", sample_captions)
+        print("sample_captions_sequence_lengths:", sample_captions_sequence_lengths)
+
+
         sample_logits = outputs["sample_results"].rnn_output
         # reward = -1 * (reward)
-        reward = score(greedy_captions, self.target_seqs) - score(sample_captions, self.target_seqs)
+        target_sequence_lengths = tf.reduce_sum(self.input_mask, 1)
+        print("target_seqs:", self.target_seqs)
+        print("target_sequence_lengths:", target_sequence_lengths)
+
+        reward = self.cider_scorer.score(greedy_captions, 
+                            greedy_captions_sequence_lengths, 
+                            self.target_seqs, 
+                            target_sequence_lengths) - \
+                 self.cider_scorer.score(sample_captions, 
+                            sample_captions_sequence_lengths, 
+                            self.target_seqs,
+                            target_sequence_lengths)
         # extract the logprobs of each word in sample_captions
         sample_probs = tf.nn.softmax(sample_logits)
-        #batch_size, seq_length, _ = sample_probs.get_shape()
         batch_size, seq_length, _ = get_shape(sample_probs)
-        weights = tf.ones([batch_size, seq_length], tf.float32)
+        weights = tf.cast(tf.sequence_mask(sample_captions_sequence_lengths, maxlen=seq_length), dtype=tf.float32)
         batch_index = tf.transpose(
                         tf.reshape(
                           tf.tile(
@@ -371,12 +387,7 @@ class Im2TxtModel(object):
         self.target_rl_losses = losses  # Used in evaluation.
         self.target_rl_loss_weights = weights  # Used in evaluation.
 
-        print("rl debug:")
-        print("greedy_captions:", greedy_captions)
-        print("sample_captions:", sample_captions)
-        print("sample_captions_sequence_lengths:", sample_captions_sequence_lengths)
         print("sample_probs:", sample_probs)
-        print(batch_size, seq_length)
         print("sample_caption_probs:", sample_caption_probs)
       else:
         # cross entropy loss
@@ -478,7 +489,11 @@ class Im2TxtModel(object):
   def build(self):
     """Creates all ops for training and evaluation."""
     self.setup_global_step()
+    if FLAGS.rl_train == True:
+      self.cider_scorer = TFCiderScorer()
     self.build_inputs()
     self.get_image_output()
     self.build_model()
     self.setup_inception_initializer()
+
+    
