@@ -190,3 +190,4 @@ class CiderScorer(object):
         # debug
         # print score
         return np.mean(np.array(score)), np.array(score)
+
