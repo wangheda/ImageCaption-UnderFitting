@@ -28,7 +28,7 @@ import im2txt_models
 
 from train_utils import image_embedding
 from train_utils import image_processing
-from train_utils import inputs as input_ops
+from train_utils.inputs import get_attributes_target, get_images_and_captions, caption_to_multi_labels
 
 tf.flags.DEFINE_string("model", "ShowAndTellModel",
                         "The model.")
@@ -42,6 +42,12 @@ tf.flags.DEFINE_integer("vocab_size", 12000,
 tf.flags.DEFINE_integer("embedding_size", 512,
                         "Word embedding dimension.")
 
+tf.flags.DEFINE_string("reader", "OriginalReader",
+                        "The originalReader, other options are: LocalizationReader.")
+tf.flags.DEFINE_boolean("multiple_references", False,
+                        "For RL training, set it to True")
+tf.flags.DEFINE_boolean("cropping_images", True,
+                       "If you use the localization data, turn it off")
 tf.flags.DEFINE_string("image_format", "jpeg",
                         "Image format: jpeg or png.")
 tf.flags.DEFINE_integer("values_per_input_shard", 2300,
@@ -99,9 +105,6 @@ class Im2TxtModel(object):
     assert mode in ["train", "inference"]
     self.mode = mode
 
-    # Reader for the input data.
-    self.reader = tf.TFRecordReader()
-
     # To match the "Show and Tell" paper we initialize all variables with a
     # random uniform initializer.
     self.initializer = tf.random_uniform_initializer(
@@ -149,25 +152,6 @@ class Im2TxtModel(object):
     """Returns true if the model is built for training mode."""
     return self.mode == "train"
 
-  def process_image(self, encoded_image, thread_id=0, flip=False):
-    """Decodes and processes an image string.
-
-    Args:
-      encoded_image: A scalar string Tensor; the encoded image.
-      thread_id: Preprocessing thread id used to select the ordering of color
-        distortions.
-
-    Returns:
-      A float32 Tensor of shape [height, width, 3]; the processed image.
-    """
-    return image_processing.process_image(encoded_image,
-                                          is_training=self.is_training(),
-                                          height=FLAGS.image_height,
-                                          width=FLAGS.image_width,
-                                          thread_id=thread_id,
-                                          image_format=FLAGS.image_format,
-                                          flip=flip)
-
   def build_inputs(self):
     """Input prefetching, preprocessing and batching.
 
@@ -177,71 +161,28 @@ class Im2TxtModel(object):
       self.target_seqs (training and eval only)
       self.input_mask (training and eval only)
     """
-    if self.mode == "inference":
-      # In inference mode, images and inputs are fed via placeholders.
-      image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
-      input_feed = tf.placeholder(dtype=tf.int64,
-                                  shape=[None],  # batch_size
-                                  name="input_feed")
+    if FLAGS.reader == "OriginalReader":
+      if self.mode == "inference":
+        # In inference mode, images and inputs are fed via placeholders.
+        image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
+        input_feed = tf.placeholder(dtype=tf.int64,
+                                    shape=[None],  # batch_size
+                                    name="input_feed")
 
-      # Process image and insert batch dimensions.
-      images = tf.expand_dims(self.process_image(image_feed), 0)
-      input_seqs = tf.expand_dims(input_feed, 1)
+        # Process image and insert batch dimensions.
+        images = tf.expand_dims(simple_process_image(image_feed), 0)
+        input_seqs = tf.expand_dims(input_feed, 1)
 
-      # No target sequences or input mask in inference mode.
-      target_seqs = None
-      input_mask = None
-    else:
-      # Prefetch serialized SequenceExample protos.
-      input_queue = input_ops.prefetch_input_data(
-          self.reader,
-          FLAGS.input_file_pattern,
-          is_training=self.is_training(),
-          batch_size=FLAGS.batch_size,
-          values_per_shard=FLAGS.values_per_input_shard,
-          input_queue_capacity_factor=FLAGS.input_queue_capacity_factor,
-          num_reader_threads=FLAGS.num_input_reader_threads)
+        # No target sequences or input mask in inference mode.
+        target_seqs = None
+        input_mask = None
+      else:
+        images, input_seqs, target_seqs, input_mask = get_images_and_captions(is_training=self.is_training)
 
-      # Image processing and random distortion. Split across multiple threads
-      # with each thread applying a slightly different distortion.
-      assert FLAGS.num_preprocess_threads % 2 == 0
-      images_and_captions = []
-      for thread_id in range(FLAGS.num_preprocess_threads):
-        serialized_sequence_example = input_queue.dequeue()
-        if FLAGS.support_flip:
-          encoded_image, caption, flip_caption = input_ops.parse_sequence_example(
-              serialized_sequence_example,
-              image_feature=FLAGS.image_feature_name,
-              caption_feature=FLAGS.caption_feature_name,
-              flip_caption_feature=FLAGS.flip_caption_feature_name)
-          # random decides flip or not
-          flip_image = self.process_image(encoded_image, thread_id=thread_id, flip=True)
-          image = self.process_image(encoded_image, thread_id=thread_id)
-          maybe_flip_image, maybe_flip_caption = tf.cond(
-            tf.less(tf.random_uniform([],0,1.0), 0.5), 
-            lambda: [flip_image, flip_caption], 
-            lambda: [image, caption])
-          images_and_captions.append([maybe_flip_image, maybe_flip_caption])
-        else:
-          encoded_image, caption, _ = input_ops.parse_sequence_example(
-              serialized_sequence_example,
-              image_feature=FLAGS.image_feature_name,
-              caption_feature=FLAGS.caption_feature_name)
-          image = self.process_image(encoded_image, thread_id=thread_id)
-          images_and_captions.append([image, caption])
-
-      # Batch inputs.
-      queue_capacity = (2 * FLAGS.num_preprocess_threads *
-                        FLAGS.batch_size)
-      images, input_seqs, target_seqs, input_mask = (
-          input_ops.batch_with_dynamic_pad(images_and_captions,
-                                           batch_size=FLAGS.batch_size,
-                                           queue_capacity=queue_capacity))
-
-    self.images = images
-    self.input_seqs = input_seqs
-    self.target_seqs = target_seqs
-    self.input_mask = input_mask
+      self.images = images
+      self.input_seqs = input_seqs
+      self.target_seqs = target_seqs
+      self.input_mask = input_mask
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
@@ -333,7 +274,7 @@ class Im2TxtModel(object):
       if "attributes_logits" in outputs and "attributes_mask" in outputs:
         attributes_logits = outputs["attributes_logits"]
         attributes_mask = outputs["attributes_mask"]
-        attributes_targets = input_ops.get_attributes_target(self.target_seqs, attributes_mask)
+        attributes_targets = get_attributes_target(self.target_seqs, attributes_mask)
 
         attributes_loss = tf.nn.sigmoid_cross_entropy_with_logits(
           labels=attributes_targets,
@@ -354,7 +295,7 @@ class Im2TxtModel(object):
       # discriminative loss
       # should be multi-label margin loss, but the loss below is a little different
       if "discriminative_logits" in outputs:
-        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
+        word_labels = caption_to_multi_labels(self.target_seqs)
         discriminative_loss = tf.losses.hinge_loss(labels=word_labels,
                                                    logits=outputs["discriminative_logits"],
                                                    weights=FLAGS.discriminative_loss_weights)
@@ -372,7 +313,7 @@ class Im2TxtModel(object):
 
       if "word_predictions" in outputs:
         word_predictions = outputs["word_predictions"]
-        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
+        word_labels = caption_to_multi_labels(self.target_seqs)
         word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
                                                             logits=word_predictions)
         word_loss = tf.div(tf.reduce_sum(word_loss), 

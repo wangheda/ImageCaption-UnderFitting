@@ -21,7 +21,29 @@ from __future__ import print_function
 
 
 import tensorflow as tf
+from tensorflow import flags
 
+FLAGS = flags.FLAGS
+
+
+def simple_process_image(encoded_image, thread_id=0, flip=False, is_training=True):
+  """Decodes and processes an image string.
+
+  Args:
+    encoded_image: A scalar string Tensor; the encoded image.
+    thread_id: Preprocessing thread id used to select the ordering of color
+      distortions.
+
+  Returns:
+    A float32 Tensor of shape [height, width, 3]; the processed image.
+  """
+  return process_image(encoded_image,
+                       is_training=is_training,
+                       height=FLAGS.image_height,
+                       width=FLAGS.image_width,
+                       thread_id=thread_id,
+                       image_format=FLAGS.image_format,
+                       flip=flip)
 
 def distort_image(image, thread_id, flip=False):
   """Perform random distortions on an image.
@@ -109,17 +131,24 @@ def process_image(encoded_image,
 
   # Resize image.
   assert (resize_height > 0) == (resize_width > 0)
-  if resize_height:
-    image = tf.image.resize_images(image,
-                                   size=[resize_height, resize_width],
-                                   method=tf.image.ResizeMethod.BILINEAR)
 
-  # Crop to final dimensions.
-  if is_training:
-    image = tf.random_crop(image, [height, width, 3])
+  if FLAGS.cropping_images:
+    if resize_height:
+      image = tf.image.resize_images(image,
+                                     size=[resize_height, resize_width],
+                                     method=tf.image.ResizeMethod.BILINEAR)
+
+    # Crop to final dimensions.
+    if is_training:
+      image = tf.random_crop(image, [height, width, 3])
+    else:
+      # Central crop, assuming resize_height > height, resize_width > width.
+      image = tf.image.resize_image_with_crop_or_pad(image, height, width)
   else:
-    # Central crop, assuming resize_height > height, resize_width > width.
-    image = tf.image.resize_image_with_crop_or_pad(image, height, width)
+    image = tf.image.resize_images(image,
+                                   size=[height, width],
+                                   method=tf.image.ResizeMethod.BILINEAR)
+    
 
   image_summary("resized_image", image)
 

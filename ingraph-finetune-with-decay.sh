@@ -28,4 +28,4 @@ cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
   --learning_rate_decay_factor=0.6 \
   --train_inception_with_decay=True \
   --support_ingraph=True \
-  --number_of_steps=600000
+  --number_of_steps=700000
