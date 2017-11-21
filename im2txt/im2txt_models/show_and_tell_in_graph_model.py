@@ -106,7 +106,8 @@ class ShowAndTellInGraphModel(object):
           greedy_outputs, _ , greedy_outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
             decoder=greedy_decoder,
             output_time_major=False,
-            impute_finished=False)
+            impute_finished=False,
+            maximum_iterations=FLAGS.max_caption_length)
 
           # 2. generate sample captions
           helper = tf.contrib.seq2seq.SampleEmbeddingHelper(
@@ -142,7 +143,14 @@ class ShowAndTellInGraphModel(object):
       else:
         raise Exception("Unknown mode!")
 
-      maximum_iterations = None if mode == "train" else FLAGS.max_caption_length
+      if mode == "train":
+        if FLAGS.rl_train == True:
+          maximum_iterations = FLAGS.max_caption_length
+        else:
+          maximum_iterations = None
+      else:
+        maximum_iterations = FLAGS.max_caption_length
+      #maximum_iterations = None if mode == "train" else FLAGS.max_caption_length
       outputs, _ , outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
         decoder=decoder,
         output_time_major=False,

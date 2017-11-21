@@ -350,11 +350,11 @@ class Im2TxtModel(object):
 
 
         sample_logits = outputs["sample_results"].rnn_output
+        print("sample_logits:", sample_logits)
         # reward = -1 * (reward)
         target_sequence_lengths = tf.reduce_sum(self.input_mask, 1)
         print("target_seqs:", self.target_seqs)
         print("target_sequence_lengths:", target_sequence_lengths)
-
         reward = self.cider_scorer.score(greedy_captions, 
                             greedy_captions_sequence_lengths, 
                             self.target_seqs, 
@@ -363,6 +363,9 @@ class Im2TxtModel(object):
                             sample_captions_sequence_lengths, 
                             self.target_seqs,
                             target_sequence_lengths)
+        reward = tf.stop_gradient(reward)
+        print("reward:", reward)
+        tf.summary.scalar("losses/rl_loss", reward[0])
         # extract the logprobs of each word in sample_captions
         sample_probs = tf.nn.softmax(sample_logits)
         batch_size, seq_length, _ = get_shape(sample_probs)
@@ -377,8 +380,11 @@ class Im2TxtModel(object):
                                 tf.expand_dims(seq_index, -1),
                                 tf.expand_dims(sample_captions, -1)
                                  ], axis=-1)
+        print("batch_index", batch_index)
+        print("seq_index", seq_index)
+        print("gather_index", gather_index)
         sample_caption_probs = tf.gather_nd(sample_probs, gather_index)
-        losses = reward * tf.log(sample_caption_probs)
+        losses = tf.expand_dims(reward, 1) * tf.log(sample_caption_probs)
         rl_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
                          tf.reduce_sum(weights),
                          name="rl_loss")
