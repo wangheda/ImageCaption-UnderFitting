@@ -1,14 +1,15 @@
-#!/usr/bin/env python
-
-
+# coding: utf-8
 import copy
 from collections import defaultdict
 import numpy as np
 import pdb
 import math
 import sys
-import jieba
+reload(sys)
+sys.setdefaultencoding('utf8')
 
+import jieba
+import json
 import tensorflow as tf
 
 FLAGS = tf.flags.FLAGS
@@ -34,7 +35,7 @@ class CiderScorer(object):
     with open(vocab_file) as F:
       for line in F:
         cols = line.rstrip().split()
-        word = cols[0]
+        word = cols[0].decode('utf-8')
         if word == "":
           word = " "
         idx = len(self.vocab)
@@ -97,26 +98,26 @@ class CiderScorer(object):
     return self
 
 
-def main():
+def main(unused_argv):
     cider_scorer = CiderScorer()
     with open(FLAGS.annotation_file, 'r') as f:
         caption_data = json.load(f)
 
     for data in caption_data:
-        image_name = data['image_id'].split('.')[0]
         captions = data['caption']
         refs = []
         for caption in captions:
-            w = jieba.cut(ann['caption'].strip().replace('。',''), cut_all=False)
+            w = jieba.cut(caption.strip().replace(u'。',''), cut_all=False)
             p = ' '.join(w)
             refs.append(p)
         cider_scorer += (None, refs)
-
+    print "load %d refs" %(len(cider_scorer.original_refs))
     cider_scorer.compute_doc_freq()
     df_data = {}
     df_data['df_keys'] = cider_scorer.df_keys
     df_data['df_values'] = cider_scorer.df_values
     df_data['ref_len'] = np.log(float(len(cider_scorer.original_refs)))
+    print "get %d ngrams." %(len(cider_scorer.df_keys))
     output = open(FLAGS.output_file, 'w')
     json.dump(df_data, output, indent=4)
     output.close()
@@ -124,9 +125,3 @@ def main():
 if __name__ == "__main__":
     tf.app.run()
 
-
-
-
-    
-
-  
