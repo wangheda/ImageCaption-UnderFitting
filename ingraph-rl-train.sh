@@ -11,7 +11,7 @@ model=ShowAndTellInGraphModel
 
 model_dir_name=show_and_tell_in_graph_rl_model
 
-cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
+cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
@@ -22,3 +22,4 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --rl_train=True \
   --document_frequency_file="${DOCUMENT_FREQUENCY_FILE}" \
   --number_of_steps=105000 \
+  --batch_size=30

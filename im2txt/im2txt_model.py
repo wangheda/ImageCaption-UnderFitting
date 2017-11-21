@@ -365,7 +365,7 @@ class Im2TxtModel(object):
                             target_sequence_lengths)
         reward = tf.stop_gradient(reward)
         print("reward:", reward)
-        tf.summary.scalar("losses/rl_loss", reward[0])
+        tf.summary.scalar("losses/reward", reward[0])
         # extract the logprobs of each word in sample_captions
         sample_probs = tf.nn.softmax(sample_logits)
         batch_size, seq_length, _ = get_shape(sample_probs)
