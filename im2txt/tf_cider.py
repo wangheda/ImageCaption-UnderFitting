@@ -2,12 +2,15 @@
 import json
 import tensorflow as tf
 import numpy as np
+import sys
 
 tf.flags.DEFINE_integer("max_vocab_size", 10000,
                        "Don't change this.")
 tf.flags.DEFINE_string("document_frequency_file", "data/document_frequency.json", "File containing the document frequency infos.")
 
 FLAGS = tf.app.flags.FLAGS
+
+LOG_TENSOR = True
 
 def get_shape(tensor):
   """Returns static shape if available and dynamic shape otherwise."""
@@ -38,6 +41,12 @@ class TFCiderScorer(object):
     return
     score:       [batch]
     """
+    def log_tensor(name, g=None, l=None):
+      if LOG_TENSOR:
+        if g is None and l is None:
+          print >> sys.stderr, name, eval(name, {"self":self})
+        else:
+          print >> sys.stderr, name, eval(name, g, l)
 
     if len(get_shape(ref_words)) == 2:
       ref_words = tf.expand_dims(ref_words, 1)
@@ -66,7 +75,7 @@ class TFCiderScorer(object):
 
       words_idx = words + 1
       words_idx = tf.cast(words_idx, dtype=tf.int64)
-      #log_tensor("words_idx", l=locals())
+      log_tensor("words_idx", l=locals())
 
       for i in range(n):
         weights = [FLAGS.max_vocab_size**k for k in range(i,-1,-1)]
@@ -75,15 +84,15 @@ class TFCiderScorer(object):
         else:
           tmp_shifted.append(tf.concat([words_idx[:,:,i:], tf.constant(0, dtype=tf.int64, shape=[batch,num_sents,i])], axis=-1))
         tmp_ngram = tf.add_n([x*y for x,y in zip(tmp_shifted, weights)])
-        #log_tensor("tmp_ngram", l=locals())
+        log_tensor("tmp_ngram", l=locals())
 
         tmp_ngrams.append(tmp_ngram)  # n-gram ids
         tmp_lengths.append(tf.maximum(lengths-i, 0)) # bi-gram ids are shorther by 1, etc
 
       tmp_ngrams = tf.stack(tmp_ngrams, axis=2)
       tmp_lengths = tf.stack(tmp_lengths, axis=2)
-      #log_tensor("tmp_ngrams", l=locals())
-      #log_tensor("tmp_lengths", l=locals())
+      log_tensor("tmp_ngrams", l=locals())
+      log_tensor("tmp_lengths", l=locals())
       return tmp_ngrams, tmp_lengths
     
     def compute_vec_norm_and_freq(ngrams, ngram_lengths):
