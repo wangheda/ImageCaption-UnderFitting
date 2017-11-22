@@ -21,6 +21,12 @@ def log_tensor(name, g=None, l=None):
     else:
       print >> sys.stderr, name, eval(name, g, l)
 
+def get_rank(tensor):
+  return len(get_shape_as_list(tensor))
+
+def get_shape_as_list(tensor):
+  return tensor.get_shape().as_list()
+
 def get_shape(tensor):
   """Returns static shape if available and dynamic shape otherwise."""
   static_shape = tensor.shape.as_list()
@@ -52,20 +58,28 @@ class CiderScorer(object):
     return
     score:       [batch]
     """
+
     hyp_words = tf.cast(hyp_words, dtype=tf.int64)
     ref_words = tf.cast(ref_words, dtype=tf.int64)
-    
+
+    if get_rank(hyp_words) == 2:
+      hyp_words = tf.expand_dims(hyp_words, axis=1)
+      hyp_lengths = tf.expand_dims(hyp_lengths, axis=1)
+    if get_rank(ref_words) == 2:
+      ref_words = tf.expand_dims(ref_words, axis=1)
+      ref_lengths = tf.expand_dims(ref_lengths, axis=1)
+
+    log_tensor("hyp_words", l=locals())
+    log_tensor("hyp_lengths", l=locals())
+    log_tensor("ref_words", l=locals())
+    log_tensor("ref_lengths", l=locals())
+
     def ngram_count(words, lengths, n=4):
       shape = words.get_shape().as_list()
-      if len(shape) == 2:
-        num_sents = 1
-        batch, max_length = shape
-        words = tf.reshape(words, [batch, num_sents, max_length])
-        lengths = tf.reshape(lengths, [batch, num_sents])
-      elif len(shape) == 3:
+      if len(shape) == 3:
         batch, num_sents, max_length = shape
       else:
-        raise NotImplementedError("tensor must be of rank 2 or 3")
+        raise NotImplementedError("tensor must be of rank 3")
       
       tmp_ngrams = []
       tmp_lengths = []
@@ -124,10 +138,14 @@ class CiderScorer(object):
       df_values = tf.log(tf.maximum(doc_freq, 1.0))
 
       tf.summary.histogram("cider/document_freq", doc_freq)
+      tf.summary.histogram("cider/text_freq", text_freq)
+      tf.summary.histogram("cider/df_values", df_values)
 
       vec = text_freq * tf.maximum(self.ref_len - df_values, 0.0)
       norm = tf.reduce_sum(vec * vec * float_mask / (text_freq + 1e-12), axis=-1)
       norm = tf.sqrt(norm)
+      tf.summary.histogram("cider/vec", vec)
+      tf.summary.histogram("cider/norm", norm)
       return vec, norm, text_freq
 
     def sim(hyp_vec, hyp_norm, hyp_tf, hyp_lengths, hyp_ngrams, hyp_ngram_lengths,
@@ -147,8 +165,17 @@ class CiderScorer(object):
       batch, num_sents, n, max_hyp_length = hyp_vec.get_shape().as_list()
       _, _, _, max_ref_length = ref_vec.get_shape().as_list()
       
+      log_tensor("hyp_vec", l=locals())
+      log_tensor("hyp_norm", l=locals())
+      log_tensor("hyp_ngrams", l=locals())
+      log_tensor("hyp_ngram_lengths", l=locals())
+      log_tensor("ref_vec", l=locals())
+      log_tensor("ref_norm", l=locals())
+      log_tensor("ref_ngrams", l=locals())
+      log_tensor("ref_ngram_lengths", l=locals())
 
       delta = tf.cast(hyp_lengths - ref_lengths, tf.float32)
+      log_tensor("delta", l=locals())
 
       ref_masks = tf.cast(tf.reshape(
                     tf.sequence_mask(
@@ -179,11 +206,15 @@ class CiderScorer(object):
                            axis=[-2,-1])
 
       val = prod / (hyp_norm * ref_norm + 1e-12)
+      log_tensor("val", l=locals())
                            
       mult = np.e ** (-(delta ** 2) / ((sigma ** 2) * 2))
       mask = tf.cast(ref_lengths > 0, dtype=tf.float32)
 
       scores = val * tf.expand_dims(mult, axis=2) * tf.expand_dims(mask, axis=2)
+      tf.summary.histogram("cider/scores", scores)
+
+      log_tensor("scores", l=locals())
 
       score_avg = tf.reduce_sum(scores, axis=[1,2]) \
                   / (tf.reduce_sum(mask, axis=1) * float(n) + 1e-12)
