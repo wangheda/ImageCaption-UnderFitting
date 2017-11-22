@@ -75,6 +75,8 @@ tf.flags.DEFINE_string("vocab_file", "",
 
 tf.flags.DEFINE_boolean("rl_train", False,
                         "Train with reinforcement learning.")
+tf.flags.DEFINE_integer("max_ref_length", 30, "Max reference length.")
+
 
 import im2txt_model
 

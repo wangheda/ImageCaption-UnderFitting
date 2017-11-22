@@ -227,8 +227,8 @@ class Im2TxtModel(object):
           flip_image = self.process_image(encoded_image, thread_id=thread_id, flip=True)
           image = self.process_image(encoded_image, thread_id=thread_id)
           maybe_flip_image, maybe_flip_caption = tf.cond(
-            tf.less(tf.random_uniform([],0,1.0), 0.5), 
-            lambda: [flip_image, flip_caption], 
+            tf.less(tf.random_uniform([],0,1.0), 0.5),
+            lambda: [flip_image, flip_caption],
             lambda: [image, caption])
           images_and_captions.append([maybe_flip_image, maybe_flip_caption])
         else:
@@ -315,7 +315,7 @@ class Im2TxtModel(object):
 
     # model
     outputs = caption_model.create_model(
-          input_seqs = self.input_seqs, 
+          input_seqs = self.input_seqs,
           image_model_output = self.image_model_output,
           initializer = self.initializer,
           mode = self.mode,
@@ -330,7 +330,6 @@ class Im2TxtModel(object):
       elif "bs_results" in outputs:
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
-      
       if "top_n_attributes" in outputs:
         self.top_n_attributes = outputs["top_n_attributes"]
     else:
@@ -338,9 +337,42 @@ class Im2TxtModel(object):
       if FLAGS.rl_train == True:
         # rl loss
         # load greed caption and sample caption to calculate reward
+        def pad_hyp_caption(caption, maxlen):
+          # the length of caption must be smaller than maxlen
+          # caption: [batch_size, caption_length]
+          batch_size, caption_length = get_shape(caption)
+          #paddings = tf.constant([[0,0],[0,FLAGS.max_caption_length - caption_length]])
+          caption = tf.pad(caption, [[0,0],[0,maxlen - caption_length]], "CONSTANT")
+          caption = tf.slice(caption, [0,0], [batch_size, maxlen])
+          return caption
+
+        def pad_hyp_probs(caption_probs, maxlen):
+          # the length of caption must be smaller than maxlen
+          # caption: [batch_size, caption_length, vocab_size]
+          batch_size, caption_length, vocab_size = get_shape(caption_probs)
+          #paddings = tf.constant([[0,0],[0,FLAGS.max_caption_length - caption_length]])
+          caption_probs = tf.pad(caption_probs, [[0,0],[0,maxlen - caption_length], [0,0] ], "CONSTANT")
+          caption_probs = tf.slice(caption_probs, [0,0,0], [batch_size, maxlen, vocab_size])
+          return caption_probs
+
+
+        def pad_truncate_ref_caption(caption, seq_length, maxlen):
+          # pad or truncate based on the length of caption is smaller than maxlen or not
+          # caption: [batch_size, ref_num, caption_length]
+          batch_size, ref_num, _ = get_shape(caption)
+          max_length = tf.reduce_max(seq_length)
+          caption = tf.cond(maxlen > max_length,
+                            lambda: tf.pad(caption, [[0,0], [0,0], [0,maxlen-max_length]]),
+                            lambda: tf.identity(caption))
+          caption = tf.slice(caption, [0,0,0], [batch_size, ref_num, maxlen])
+          seq_length = tf.clip_by_value(seq_length, 0, maxlen)
+          return caption, seq_length
+
         greedy_captions = outputs["greedy_results"].sample_id
+        greedy_captions = pad_hyp_caption(greedy_captions, FLAGS.max_caption_length)
         greedy_captions_sequence_lengths = outputs["greedy_results_sequence_lengths"]
         sample_captions = outputs["sample_results"].sample_id
+        sample_captions = pad_hyp_caption(sample_captions, FLAGS.max_caption_length)
         sample_captions_sequence_lengths = outputs["sample_results_sequence_lengths"]
 
         print("rl debug:")
@@ -352,22 +384,32 @@ class Im2TxtModel(object):
         sample_logits = outputs["sample_results"].rnn_output
         print("sample_logits:", sample_logits)
         # reward = -1 * (reward)
-        target_sequence_lengths = tf.reduce_sum(self.input_mask, 1)
-        print("target_seqs:", self.target_seqs)
+
+        if len(get_shape(self.target_seqs)) == 2:
+          self.target_seqs = tf.expand_dims(self.target_seqs, 1)
+          self.input_mask = tf.expand_dims(self.input_mask,1)
+
+        target_sequence_lengths = tf.reduce_sum(self.input_mask, -1)
+        target_seqs, target_sequence_lengths = pad_truncate_ref_caption(
+                                                  self.target_seqs,
+                                                  target_sequence_lengths,
+                                                  FLAGS.max_ref_length)
+        print("target_seqs:", target_seqs)
         print("target_sequence_lengths:", target_sequence_lengths)
-        reward = self.cider_scorer.score(greedy_captions, 
-                            greedy_captions_sequence_lengths, 
-                            self.target_seqs, 
+        reward = self.cider_scorer.score(greedy_captions,
+                            greedy_captions_sequence_lengths,
+                            target_seqs,
                             target_sequence_lengths) - \
-                 self.cider_scorer.score(sample_captions, 
-                            sample_captions_sequence_lengths, 
-                            self.target_seqs,
+                 self.cider_scorer.score(sample_captions,
+                            sample_captions_sequence_lengths,
+                            target_seqs,
                             target_sequence_lengths)
         reward = tf.stop_gradient(reward)
         print("reward:", reward)
         tf.summary.scalar("losses/reward", reward[0])
         # extract the logprobs of each word in sample_captions
         sample_probs = tf.nn.softmax(sample_logits)
+        sample_probs = pad_hyp_probs(sample_probs, FLAGS.max_caption_length)
         batch_size, seq_length, _ = get_shape(sample_probs)
         weights = tf.cast(tf.sequence_mask(sample_captions_sequence_lengths, maxlen=seq_length), dtype=tf.float32)
         batch_index = tf.transpose(
@@ -412,7 +454,7 @@ class Im2TxtModel(object):
         self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
 
 
-      # multi-label-loss 
+      # multi-label-loss
       if "attributes_logits" in outputs and "attributes_mask" in outputs:
         attributes_logits = outputs["attributes_logits"]
         attributes_mask = outputs["attributes_mask"]
@@ -440,7 +482,7 @@ class Im2TxtModel(object):
         word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
         word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
                                                             logits=word_predictions)
-        word_loss = tf.div(tf.reduce_sum(word_loss), 
+        word_loss = tf.div(tf.reduce_sum(word_loss),
                            reduce(lambda x,y: x*y, word_loss.get_shape().as_list()),
                            name="word_loss")
         tf.losses.add_loss(word_loss)
@@ -449,7 +491,7 @@ class Im2TxtModel(object):
 
       total_loss = tf.losses.get_total_loss()
 
-      # Add summaries.   
+      # Add summaries.
       tf.summary.scalar("losses/total_loss", total_loss)
       for var in tf.trainable_variables():
         tf.summary.histogram("parameters/" + var.op.name, var)
@@ -501,5 +543,3 @@ class Im2TxtModel(object):
     self.get_image_output()
     self.build_model()
     self.setup_inception_initializer()
-
-    
