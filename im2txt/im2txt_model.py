@@ -352,7 +352,6 @@ class Im2TxtModel(object):
 
         sample_logits = outputs["sample_results"].rnn_output
         print("sample_logits:", sample_logits)
-        # reward = -1 * (reward)
 
         if len(get_shape(self.target_seqs)) == 2:
           self.target_seqs = tf.expand_dims(self.target_seqs, 1)
@@ -365,17 +364,20 @@ class Im2TxtModel(object):
         #                                          FLAGS.max_ref_length)
         print("target_seqs:", self.target_seqs)
         print("target_sequence_lengths:", target_sequence_lengths)
-        reward = self.cider_scorer.score(greedy_captions,
-                            greedy_captions_sequence_lengths,
-                            self.target_seqs,
-                            target_sequence_lengths) - \
-                 self.cider_scorer.score(sample_captions,
-                            sample_captions_sequence_lengths,
-                            self.target_seqs,
-                            target_sequence_lengths)
+        greedy_score = self.cider_scorer.score(greedy_captions,
+                                               greedy_captions_sequence_lengths,
+                                               self.target_seqs,
+                                               target_sequence_lengths)
+        sample_score = self.cider_scorer.score(sample_captions,
+                                               sample_captions_sequence_lengths,
+                                               self.target_seqs,
+                                               target_sequence_lengths)
+        # reward = -1 * reward
+        reward = greedy_score - sample_score
         reward = tf.stop_gradient(reward)
         print("reward:", reward)
-        tf.summary.scalar("losses/reward", reward[0])
+        tf.summary.scalar("losses/greedy_score", tf.reduce_mean(greedy_score))
+        tf.summary.scalar("losses/sample_score", tf.reduce_mean(sample_score))
         # extract the logprobs of each word in sample_captions
         sample_probs = tf.nn.softmax(sample_logits)
         #sample_probs = pad_hyp_probs(sample_probs, FLAGS.max_caption_length)

@@ -351,7 +351,7 @@ class ShowAndTellAdvancedModel(object):
       else:
         maximum_iterations = FLAGS.max_caption_length
 
-      outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(
+      outputs, _ , outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
         decoder=decoder,
         output_time_major=False,
         impute_finished=False,
