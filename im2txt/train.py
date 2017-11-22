@@ -67,11 +67,6 @@ tf.flags.DEFINE_string("exclude_variable_patterns", None,
                        "Filter (by comma separated regular expressions) variables that will not be"
                        " loaded from and saved to checkpoints.")
 
-# semantic attention config
-tf.flags.DEFINE_boolean("only_attributes_loss", False,
-                        "Train only use aux_loss or not.")
-tf.flags.DEFINE_string("vocab_file", "",
-                       "Text file containing the vocabulary.")
 
 import im2txt_model
 

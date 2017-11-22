@@ -26,6 +26,7 @@ from __future__ import print_function
 import tensorflow as tf
 import im2txt_models
 
+import losses
 from train_utils import image_embedding
 from train_utils import image_processing
 from train_utils.inputs import get_attributes_target, get_images_and_captions, caption_to_multi_labels
@@ -48,6 +49,7 @@ tf.flags.DEFINE_boolean("multiple_references", False,
                         "For RL training, set it to True")
 tf.flags.DEFINE_boolean("cropping_images", True,
                        "If you use the localization data, turn it off")
+
 tf.flags.DEFINE_string("image_format", "jpeg",
                         "Image format: jpeg or png.")
 tf.flags.DEFINE_integer("values_per_input_shard", 2300,
@@ -84,6 +86,20 @@ tf.flags.DEFINE_boolean("inception_return_tuple", False,
 tf.flags.DEFINE_boolean("yet_another_inception", False,
                         "If set true, return two inception output. See image_embedding for details.")
 
+# semantic attention config
+tf.flags.DEFINE_boolean("only_attributes_loss", False,
+                        "Train only use aux_loss or not.")
+tf.flags.DEFINE_string("vocab_file", "",
+                       "Text file containing the vocabulary.")
+
+# reinforcement learning config
+tf.flags.DEFINE_boolean("rl_training", False,
+                        "Train with reinforcement learning.")
+tf.flags.DEFINE_string("rl_training_loss", "SelfCriticalLoss",
+                        "Type of loss in reinforcement learning.")
+tf.flags.DEFINE_integer("max_ref_length", 30, "Max reference length.")
+
+
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -92,6 +108,26 @@ def find_class_by_name(name, modules):
   modules = [getattr(module, name, None) for module in modules]
   return next(a for a in modules if a)
 
+def get_shape_as_list(tensor):
+  return tensor.get_shape().as_list()
+
+def get_rank(tensor):
+  return len(get_shape_as_list(tensor))
+
+# padd or truncate the given axis of tensor to max_length
+def pad_or_truncate(tensor, lengths, axis, max_length):
+  shape = tensor.get_shape().as_list()
+  real_shape = tf.shape(tensor)
+  target_shape = [l for l in shape]
+  target_shape[axis] = max_length
+
+  left_padding, right_padding = [0] * len(shape), [0] * len(shape)
+  right_padding[axis] = tf.maximum(max_length - real_shape[axis], 0)
+  padded_tensor = tf.pad(tensor, zip(left_padding, right_padding))
+  sliced_tensor = tf.slice(padded_tensor, [0] * len(shape), target_shape)
+  clipped_lengths = tf.minimum(lengths, max_length)
+  return sliced_tensor, clipped_lengths
+  
 
 class Im2TxtModel(object):
   """Image-to-text implementation"""
@@ -181,8 +217,9 @@ class Im2TxtModel(object):
 
       self.images = images
       self.input_seqs = input_seqs
-      self.target_seqs = target_seqs
       self.input_mask = input_mask
+      self.target_seqs = target_seqs
+      self.target_lengths = tf.reduce_sum(input_mask, -1)
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
@@ -247,13 +284,14 @@ class Im2TxtModel(object):
 
     # model
     outputs = caption_model.create_model(
-          input_seqs = self.input_seqs, 
+          input_seqs = self.input_seqs,
           image_model_output = self.image_model_output,
           initializer = self.initializer,
           mode = self.mode,
           target_seqs = self.target_seqs,
           global_step = self.global_step,
-          input_mask = self.input_mask)
+          input_mask = self.input_mask,
+          target_lengths = self.target_lengths)
 
     # loss
     if self.mode == "inference":
@@ -262,78 +300,123 @@ class Im2TxtModel(object):
       elif "bs_results" in outputs:
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
-      
       if "top_n_attributes" in outputs:
         self.top_n_attributes = outputs["top_n_attributes"]
     else:
-      logits = outputs["logits"]
-      targets = tf.reshape(self.target_seqs, [-1])
-      weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+      # caption loss
+      if FLAGS.rl_training == True:
+        # rl loss
+        # load greed caption and sample caption to calculate reward
+        target_caption_words = self.target_seqs
+        target_caption_lengths = self.target_lengths
+        greedy_caption_words = outputs["greedy_results"].sample_id
+        greedy_caption_lengths = outputs["greedy_results_sequence_lengths"]
+        sample_caption_logits = outputs["sample_results"].rnn_output
+        sample_caption_words = outputs["sample_results"].sample_id
+        sample_caption_lengths = outputs["sample_results_sequence_lengths"]
 
-      # multi-label-loss 
-      if "attributes_logits" in outputs and "attributes_mask" in outputs:
-        attributes_logits = outputs["attributes_logits"]
-        attributes_mask = outputs["attributes_mask"]
-        attributes_targets = get_attributes_target(self.target_seqs, attributes_mask)
+        if get_rank(target_caption_words) == 2:
+          target_caption_words = tf.expand_dims(target_caption_words, 1)
+        if get_rank(target_caption_lengths) == 1:
+          target_caption_lengths = tf.expand_dims(target_caption_lengths, 1)
 
-        attributes_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-          labels=attributes_targets,
-          logits=attributes_logits)
+        if get_shape_as_list(target_caption_words)[-1] is None:
+          target_caption_words, target_caption_lengths = \
+              pad_or_truncate(target_caption_words, target_caption_lengths,
+                              axis = -1, max_length = FLAGS.max_caption_length)
+        if get_shape_as_list(greedy_caption_words)[-1] is None:
+          greedy_caption_words, greedy_caption_lengths = \
+              pad_or_truncate(greedy_caption_words, greedy_caption_lengths,
+                              axis = -1, max_length = FLAGS.max_caption_length)
+        if get_shape_as_list(sample_caption_logits)[1] is None:
+          sample_caption_logits, _ = \
+              pad_or_truncate(sample_caption_logits, sample_caption_lengths,
+                              axis = 1, max_length = FLAGS.max_ref_length)
+        if get_shape_as_list(sample_caption_words)[-1] is None:
+          sample_caption_words, sample_caption_lengths = \
+              pad_or_truncate(sample_caption_words, sample_caption_lengths,
+                              axis = -1, max_length = FLAGS.max_ref_length)
 
-        if FLAGS.use_idf_weighted_attribute_loss:
-          attributes_loss_mask = outputs["idf_weighted_mask"]
-        else:
-          attributes_loss_mask = attributes_mask
-        attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_loss_mask)),
-                                 tf.reduce_sum(attributes_loss_mask),
-                                 name="attributes_loss")
+        rl_loss_cls = find_class_by_name(FLAGS.rl_training_loss, [losses])
+        rl_loss_fn = rl_loss_cls()
+        rl_loss = rl_loss_fn.calculate_loss(
+                     target_caption_words   = target_caption_words, 
+                     target_caption_lengths = target_caption_lengths, 
+                     greedy_caption_words   = greedy_caption_words, 
+                     greedy_caption_lengths = greedy_caption_lengths, 
+                     sample_caption_words   = sample_caption_words, 
+                     sample_caption_lengths = sample_caption_lengths, 
+                     sample_caption_logits  = sample_caption_logits
+                  )
 
-        tf.losses.add_loss(attributes_loss)
-        tf.summary.scalar("losses/attributes_loss", attributes_loss)
-        self.attributes_loss = attributes_loss
+        tf.losses.add_loss(rl_loss)
 
-      # discriminative loss
-      # should be multi-label margin loss, but the loss below is a little different
-      if "discriminative_logits" in outputs:
-        word_labels = caption_to_multi_labels(self.target_seqs)
-        discriminative_loss = tf.losses.hinge_loss(labels=word_labels,
-                                                   logits=outputs["discriminative_logits"],
-                                                   weights=FLAGS.discriminative_loss_weights)
-        tf.summary.scalar("losses/discriminative_loss", discriminative_loss)
-        self.discriminative_loss = discriminative_loss
+      else:
+        # prepare logits, targets and weight
+        logits = outputs["logits"]
+        targets = tf.reshape(self.target_seqs, [-1])
+        weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+
+        # Compute losses.
+        loss_fn = losses.SparseSoftmaxCrossEntropyLoss()
+        batch_loss = loss_fn.calculate_loss(logits, targets, weights)
+
+        # Logging losses.
+        tf.summary.scalar("losses/batch_loss", batch_loss)
+        tf.losses.add_loss(batch_loss)
+
+        self.target_cross_entropy_losses = batch_loss # Used in evaluation.
+        self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
+        
+
+        # multi-label-loss
+        if "attributes_logits" in outputs and "attributes_mask" in outputs:
+          attributes_logits = outputs["attributes_logits"]
+          attributes_targets = get_attributes_target(self.target_seqs, attributes_mask)
+          if FLAGS.use_idf_weighted_attribute_loss:
+            attributes_mask = outputs["idf_weighted_mask"]
+          else:
+            attributes_mask = outputs["attributes_mask"]
+
+          attributes_loss_fn = losses.CrossEntropyLoss()
+          attributes_loss = attributes_loss_fn.calculate_loss(
+                                    attributes_logits, attributes_targets,
+                                    attributes_mask)
+
+          tf.losses.add_loss(attributes_loss)
+          tf.summary.scalar("losses/attributes_loss", attributes_loss)
+          self.attributes_loss = attributes_loss
 
 
-      # Compute losses.
-      losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
-                                                              logits=logits)
-      batch_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
-                          tf.reduce_sum(weights),
-                          name="batch_loss")
-      tf.losses.add_loss(batch_loss)
+        # discriminative loss
+        # should be multi-label margin loss, but the loss below is a little different
+        if "discriminative_logits" in outputs:
+          word_labels = caption_to_multi_labels(self.target_seqs)
+          discriminative_loss = tf.losses.hinge_loss(labels=word_labels,
+                                                     logits=outputs["discriminative_logits"],
+                                                     weights=FLAGS.discriminative_loss_weights)
+          tf.summary.scalar("losses/discriminative_loss", discriminative_loss)
+          self.discriminative_loss = discriminative_loss
 
-      if "word_predictions" in outputs:
-        word_predictions = outputs["word_predictions"]
-        word_labels = caption_to_multi_labels(self.target_seqs)
-        word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
-                                                            logits=word_predictions)
-        word_loss = tf.div(tf.reduce_sum(word_loss), 
-                           reduce(lambda x,y: x*y, word_loss.get_shape().as_list()),
-                           name="word_loss")
-        tf.losses.add_loss(word_loss)
-        tf.summary.scalar("losses/word_loss", word_loss)
-        self.word_loss = word_loss
+
+        # word weighted cross entropy loss
+        if "word_predictions" in outputs:
+          word_loss_fn = losses.CrossEntropyLoss()
+          word_loss = word_loss_fn.calculate_loss(outputs["word_predictions"],
+                                                  caption_to_multi_labels(self.target_seqs))
+          tf.summary.scalar("losses/word_loss", word_loss)
+          tf.losses.add_loss(word_loss)
+          self.word_loss = word_loss
+
 
       total_loss = tf.losses.get_total_loss()
 
       # Add summaries.
-      tf.summary.scalar("losses/batch_loss", batch_loss)
       tf.summary.scalar("losses/total_loss", total_loss)
       for var in tf.trainable_variables():
         tf.summary.histogram("parameters/" + var.op.name, var)
 
       self.total_loss = total_loss
-      self.target_cross_entropy_losses = losses  # Used in evaluation.
-      self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
 
   def setup_inception_initializer(self):
     """Sets up the function to restore inception variables from checkpoint."""

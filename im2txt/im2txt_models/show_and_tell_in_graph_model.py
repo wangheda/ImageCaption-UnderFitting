@@ -91,10 +91,36 @@ class ShowAndTellInGraphModel(object):
       # lstm_scope.reuse_variables()
 
       if mode == "train":
-        sequence_length = tf.reduce_sum(input_mask, 1)
-        helper = tf.contrib.seq2seq.TrainingHelper(
-          inputs=seq_embeddings,
-          sequence_length=sequence_length)
+        if FLAGS.rl_training == True:
+          # use rl train
+          # 1. generate greedy captions
+          greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+            embedding=embedding_map,
+            start_tokens=tf.fill([batch_size], FLAGS.start_token),
+            end_token=FLAGS.end_token)
+          greedy_decoder = tf.contrib.seq2seq.BasicDecoder(
+            cell=lstm_cell,
+            helper=greedy_helper,
+            initial_state=initial_state,
+            output_layer=output_layer)
+          greedy_outputs, _ , greedy_outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
+            decoder=greedy_decoder,
+            output_time_major=False,
+            impute_finished=False,
+            maximum_iterations=FLAGS.max_caption_length)
+
+          # 2. generate sample captions
+          helper = tf.contrib.seq2seq.SampleEmbeddingHelper(
+            embedding=embedding_map,
+            start_tokens=tf.fill([batch_size], FLAGS.start_token),
+            end_token=FLAGS.end_token)
+        else:
+          # use cross entropy
+          sequence_length = tf.reduce_sum(input_mask, 1)
+          helper = tf.contrib.seq2seq.TrainingHelper(
+            inputs=seq_embeddings,
+            sequence_length=sequence_length)
+          
         decoder = tf.contrib.seq2seq.BasicDecoder(
           cell=lstm_cell,
           helper=helper,
@@ -117,16 +143,29 @@ class ShowAndTellInGraphModel(object):
       else:
         raise Exception("Unknown mode!")
 
-      maximum_iterations = None if mode == "train" else FLAGS.max_caption_length
-      outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(
+      if mode == "train":
+        if FLAGS.rl_training == True:
+          maximum_iterations = FLAGS.max_caption_length
+        else:
+          maximum_iterations = None
+      else:
+        maximum_iterations = FLAGS.max_caption_length
+      #maximum_iterations = None if mode == "train" else FLAGS.max_caption_length
+      outputs, _ , outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
         decoder=decoder,
         output_time_major=False,
         impute_finished=False,
         maximum_iterations=maximum_iterations)
 
     if mode == "train":
-      logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
-      return {"logits": logits}
+      if FLAGS.rl_training == True:
+        return {"sample_results": outputs, 
+                "sample_results_sequence_lengths": outputs_sequence_lengths, 
+                "greedy_results": greedy_outputs,
+                "greedy_results_sequence_lengths": greedy_outputs_sequence_lengths,}
+      else:
+        logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
+        return {"logits": logits}
     else:
       return {"bs_results": outputs}
 
