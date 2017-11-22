@@ -29,6 +29,7 @@ import im2txt_models
 from train_utils import image_embedding
 from train_utils import image_processing
 from train_utils import inputs as input_ops
+from tf_cider import TFCiderScorer
 
 tf.flags.DEFINE_string("model", "ShowAndTellModel",
                         "The model.")
@@ -85,6 +86,14 @@ def find_class_by_name(name, modules):
   """Searches the provided modules for the named class and returns it."""
   modules = [getattr(module, name, None) for module in modules]
   return next(a for a in modules if a)
+
+def get_shape(tensor):
+  """Returns static shape if available and dynamic shape otherwise."""
+  static_shape = tensor.shape.as_list()
+  dynamic_shape = tf.unstack(tf.shape(tensor))
+  dims = [s[1] if s[0] is None else s[0]
+          for s in zip(static_shape, dynamic_shape)]
+  return dims
 
 
 class Im2TxtModel(object):
@@ -218,8 +227,8 @@ class Im2TxtModel(object):
           flip_image = self.process_image(encoded_image, thread_id=thread_id, flip=True)
           image = self.process_image(encoded_image, thread_id=thread_id)
           maybe_flip_image, maybe_flip_caption = tf.cond(
-            tf.less(tf.random_uniform([],0,1.0), 0.5), 
-            lambda: [flip_image, flip_caption], 
+            tf.less(tf.random_uniform([],0,1.0), 0.5),
+            lambda: [flip_image, flip_caption],
             lambda: [image, caption])
           images_and_captions.append([maybe_flip_image, maybe_flip_caption])
         else:
@@ -306,7 +315,7 @@ class Im2TxtModel(object):
 
     # model
     outputs = caption_model.create_model(
-          input_seqs = self.input_seqs, 
+          input_seqs = self.input_seqs,
           image_model_output = self.image_model_output,
           initializer = self.initializer,
           mode = self.mode,
@@ -321,78 +330,162 @@ class Im2TxtModel(object):
       elif "bs_results" in outputs:
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
-      
       if "top_n_attributes" in outputs:
         self.top_n_attributes = outputs["top_n_attributes"]
     else:
-      logits = outputs["logits"]
-      targets = tf.reshape(self.target_seqs, [-1])
-      weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+      # caption loss
+      if FLAGS.rl_train == True:
+        # rl loss
+        # load greed caption and sample caption to calculate reward
+        greedy_captions = outputs["greedy_results"].sample_id
+        #greedy_captions = pad_hyp_caption(greedy_captions, FLAGS.max_caption_length)
+        greedy_captions_sequence_lengths = outputs["greedy_results_sequence_lengths"]
+        sample_captions = outputs["sample_results"].sample_id
+        #sample_captions = pad_hyp_caption(sample_captions, FLAGS.max_caption_length)
+        sample_captions_sequence_lengths = outputs["sample_results_sequence_lengths"]
 
-      # multi-label-loss 
-      if "attributes_logits" in outputs and "attributes_mask" in outputs:
-        attributes_logits = outputs["attributes_logits"]
-        attributes_mask = outputs["attributes_mask"]
-        attributes_targets = input_ops.get_attributes_target(self.target_seqs, attributes_mask)
-
-        attributes_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-          labels=attributes_targets,
-          logits=attributes_logits)
-
-        if FLAGS.use_idf_weighted_attribute_loss:
-          attributes_loss_mask = outputs["idf_weighted_mask"]
-        else:
-          attributes_loss_mask = attributes_mask
-        attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_loss_mask)),
-                                 tf.reduce_sum(attributes_loss_mask),
-                                 name="attributes_loss")
-
-        tf.losses.add_loss(attributes_loss)
-        tf.summary.scalar("losses/attributes_loss", attributes_loss)
-        self.attributes_loss = attributes_loss
-
-      # discriminative loss
-      # should be multi-label margin loss, but the loss below is a little different
-      if "discriminative_logits" in outputs:
-        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
-        discriminative_loss = tf.losses.hinge_loss(labels=word_labels,
-                                                   logits=outputs["discriminative_logits"],
-                                                   weights=FLAGS.discriminative_loss_weights)
-        tf.summary.scalar("losses/discriminative_loss", discriminative_loss)
-        self.discriminative_loss = discriminative_loss
+        print("rl debug:")
+        print("greedy_captions:", greedy_captions)
+        print("sample_captions:", sample_captions)
+        print("sample_captions_sequence_lengths:", sample_captions_sequence_lengths)
 
 
-      # Compute losses.
-      losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
-                                                              logits=logits)
-      batch_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
-                          tf.reduce_sum(weights),
-                          name="batch_loss")
-      tf.losses.add_loss(batch_loss)
+        sample_logits = outputs["sample_results"].rnn_output
+        print("sample_logits:", sample_logits)
 
-      if "word_predictions" in outputs:
-        word_predictions = outputs["word_predictions"]
-        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
-        word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
-                                                            logits=word_predictions)
-        word_loss = tf.div(tf.reduce_sum(word_loss), 
-                           reduce(lambda x,y: x*y, word_loss.get_shape().as_list()),
-                           name="word_loss")
-        tf.losses.add_loss(word_loss)
-        tf.summary.scalar("losses/word_loss", word_loss)
-        self.word_loss = word_loss
+        if len(get_shape(self.target_seqs)) == 2:
+          self.target_seqs = tf.expand_dims(self.target_seqs, 1)
+          self.input_mask = tf.expand_dims(self.input_mask,1)
+
+        target_sequence_lengths = tf.reduce_sum(self.input_mask, -1)
+        #target_seqs, target_sequence_lengths = pad_truncate_ref_caption(
+        #                                          self.target_seqs,
+        #                                          target_sequence_lengths,
+        #                                          FLAGS.max_ref_length)
+        print("target_seqs:", self.target_seqs)
+        print("target_sequence_lengths:", target_sequence_lengths)
+        greedy_score = self.cider_scorer.score(greedy_captions,
+                                               greedy_captions_sequence_lengths,
+                                               self.target_seqs,
+                                               target_sequence_lengths)
+        sample_score = self.cider_scorer.score(sample_captions,
+                                               sample_captions_sequence_lengths,
+                                               self.target_seqs,
+                                               target_sequence_lengths)
+        # reward = -1 * reward
+        reward = greedy_score - sample_score
+        reward = tf.stop_gradient(reward)
+        print("reward:", reward)
+        tf.summary.scalar("losses/greedy_score", tf.reduce_mean(greedy_score))
+        tf.summary.scalar("losses/sample_score", tf.reduce_mean(sample_score))
+        # extract the logprobs of each word in sample_captions
+        sample_probs = tf.nn.softmax(sample_logits)
+        #sample_probs = pad_hyp_probs(sample_probs, FLAGS.max_caption_length)
+        batch_size, seq_length, _ = get_shape(sample_probs)
+        weights = tf.cast(tf.sequence_mask(sample_captions_sequence_lengths, maxlen=seq_length), dtype=tf.float32)
+        batch_index = tf.transpose(
+                        tf.reshape(
+                          tf.tile(
+                            tf.range(0,batch_size), [seq_length]), [seq_length, batch_size]))
+        seq_index = tf.reshape(tf.tile(tf.range(0,seq_length), [batch_size]), [batch_size, seq_length])
+        gather_index = tf.concat([
+                                tf.expand_dims(batch_index, -1),
+                                tf.expand_dims(seq_index, -1),
+                                tf.expand_dims(sample_captions, -1)
+                                 ], axis=-1)
+        print("batch_index", batch_index)
+        print("seq_index", seq_index)
+        print("gather_index", gather_index)
+        sample_caption_probs = tf.gather_nd(sample_probs, gather_index)
+        losses = tf.expand_dims(reward, 1) * tf.log(sample_caption_probs)
+        rl_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
+                         tf.reduce_sum(weights),
+                         name="rl_loss")
+        tf.losses.add_loss(rl_loss)
+        tf.summary.scalar("losses/rl_loss", rl_loss)
+        self.target_rl_losses = losses  # Used in evaluation.
+        self.target_rl_loss_weights = weights  # Used in evaluation.
+
+        print("sample_probs:", sample_probs)
+        print("sample_caption_probs:", sample_caption_probs)
+      else:
+        # cross entropy loss
+        logits = outputs["logits"]
+        targets = tf.reshape(self.target_seqs, [-1])
+        weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+        # Compute losses.
+        losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
+                                                                logits=logits)
+        batch_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
+                            tf.reduce_sum(weights),
+                            name="batch_loss")
+        tf.losses.add_loss(batch_loss)
+        tf.summary.scalar("losses/batch_loss", batch_loss)
+        self.target_cross_entropy_losses = losses  # Used in evaluation.
+        self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
+        
+        # multi-label-loss
+        if "attributes_logits" in outputs and "attributes_mask" in outputs:
+          attributes_logits = outputs["attributes_logits"]
+          attributes_mask = outputs["attributes_mask"]
+          attributes_targets = input_ops.get_attributes_target(self.target_seqs, attributes_mask)
+
+          attributes_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=attributes_targets,
+            logits=attributes_logits)
+
+          if FLAGS.use_idf_weighted_attribute_loss:
+            attributes_loss_mask = outputs["idf_weighted_mask"]
+          else:
+            attributes_loss_mask = attributes_mask
+          attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_loss_mask)),
+                                   tf.reduce_sum(attributes_loss_mask),
+                                   name="attributes_loss")
+
+          tf.losses.add_loss(attributes_loss)
+          tf.summary.scalar("losses/attributes_loss", attributes_loss)
+          self.attributes_loss = attributes_loss
+
+        # discriminative loss
+        # should be multi-label margin loss, but the loss below is a little different
+        if "discriminative_logits" in outputs:
+          word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
+          discriminative_loss = tf.losses.hinge_loss(labels=word_labels,
+                                                     logits=outputs["discriminative_logits"],
+                                                     weights=FLAGS.discriminative_loss_weights)
+          tf.summary.scalar("losses/discriminative_loss", discriminative_loss)
+          self.discriminative_loss = discriminative_loss
+
+
+        # Compute losses.
+        losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
+                                                                logits=logits)
+        batch_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
+                            tf.reduce_sum(weights),
+                            name="batch_loss")
+        tf.losses.add_loss(batch_loss)
+
+        # word weighted cross entropy loss
+        if "word_predictions" in outputs:
+          word_predictions = outputs["word_predictions"]
+          word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
+          word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
+                                                              logits=word_predictions)
+          word_loss = tf.div(tf.reduce_sum(word_loss),
+                             reduce(lambda x,y: x*y, word_loss.get_shape().as_list()),
+                             name="word_loss")
+          tf.losses.add_loss(word_loss)
+          tf.summary.scalar("losses/word_loss", word_loss)
+          self.word_loss = word_loss
 
       total_loss = tf.losses.get_total_loss()
 
       # Add summaries.
-      tf.summary.scalar("losses/batch_loss", batch_loss)
       tf.summary.scalar("losses/total_loss", total_loss)
       for var in tf.trainable_variables():
         tf.summary.histogram("parameters/" + var.op.name, var)
 
       self.total_loss = total_loss
-      self.target_cross_entropy_losses = losses  # Used in evaluation.
-      self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
 
   def setup_inception_initializer(self):
     """Sets up the function to restore inception variables from checkpoint."""
@@ -433,6 +526,8 @@ class Im2TxtModel(object):
   def build(self):
     """Creates all ops for training and evaluation."""
     self.setup_global_step()
+    if FLAGS.rl_train == True:
+      self.cider_scorer = TFCiderScorer()
     self.build_inputs()
     self.get_image_output()
     self.build_model()
