@@ -6,7 +6,9 @@ import sys
 
 tf.flags.DEFINE_integer("max_vocab_size", 10000,
                        "Don't change this.")
-tf.flags.DEFINE_string("document_frequency_file", "data/document_frequency.json", "File containing the document frequency infos.")
+tf.flags.DEFINE_string("document_frequency_file", 
+                       "data/document_frequency.json", 
+                       "File containing the document frequency infos.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -93,15 +95,12 @@ class TFCiderScorer(object):
                                   FLAGS.max_ref_length)
     
     def ngram_count(words, lengths, n=4):
-      #shape = words.get_shape().as_list()
-      shape = get_shape(words)
+      shape = words.get_shape().as_list()
       if len(shape) == 2:
         num_sents = 1
         batch, max_length = shape
-        #words = tf.expand_dims(words, 1)
-        #lengths = tf.expand_dims(lengths, 1)
-        words = tf.reshape(words, [batch, num_sents, max_length])
-        lengths = tf.reshape(lengths, [batch, num_sents])
+        words = tf.expand_dims(words, 1)
+        lengths = tf.expand_dims(lengths, 1)
       elif len(shape) == 3:
         batch, num_sents, max_length = shape
       else:
@@ -144,8 +143,7 @@ class TFCiderScorer(object):
       norm          : [batch, num_sents, n]
       text_freq     : [batch, num_sents, n, max_length]
       """
-      #shape = ngrams.get_shape().as_list()
-      shape = get_shape(ngrams)
+      shape = ngrams.get_shape().as_list()
       batch, num_sents, n, max_length = shape
 
       mask = tf.reshape(
@@ -185,12 +183,9 @@ class TFCiderScorer(object):
       return 
       score         : [batch]
       """
-      #batch, num_sents, n, max_hyp_length = hyp_vec.get_shape().as_list()
-      batch, num_sents, n, max_hyp_length = get_shape(hyp_vec)
-
-      #_, _, _, max_ref_length = ref_vec.get_shape().as_list()
-      _, _, _, max_ref_length = get_shape(ref_vec)
-
+      batch, num_sents, n, max_hyp_length = hyp_vec.get_shape().as_list()
+      _, _, _, max_ref_length = ref_vec.get_shape().as_list()
+      
 
       delta = tf.cast(hyp_lengths - ref_lengths, tf.float32)
 
@@ -235,8 +230,7 @@ class TFCiderScorer(object):
       return score_avg
 
     def tile_on_axis(tensor, axis=1, copies=5):
-      #shape = tensor.get_shape().as_list()
-      shape = get_shape(tensor)
+      shape = tensor.get_shape().as_list()
       multiples = [1] * len(shape)
       multiples[axis] = copies
       return tf.tile(tensor, multiples=multiples)
@@ -247,8 +241,7 @@ class TFCiderScorer(object):
     hyp_ngrams, hyp_ngram_lengths = ngram_count(hyp_words, hyp_lengths)
     hyp_vec, hyp_norm, hyp_text_freq = compute_vec_norm_and_freq(hyp_ngrams, hyp_ngram_lengths)
 
-    #ref_vec_shape = ref_vec.get_shape().as_list()
-    ref_vec_shape = get_shape(ref_vec)
+    ref_vec_shape = ref_vec.get_shape().as_list()
     num_refs = ref_vec_shape[1]
     hyp_ngrams, hyp_ngram_lengths, hyp_vec, hyp_norm, hyp_text_freq = map(
             lambda x: tile_on_axis(x, axis=1, copies=num_refs),
