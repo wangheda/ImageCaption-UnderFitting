@@ -337,42 +337,11 @@ class Im2TxtModel(object):
       if FLAGS.rl_train == True:
         # rl loss
         # load greed caption and sample caption to calculate reward
-        def pad_hyp_caption(caption, maxlen):
-          # the length of caption must be smaller than maxlen
-          # caption: [batch_size, caption_length]
-          batch_size, caption_length = get_shape(caption)
-          #paddings = tf.constant([[0,0],[0,FLAGS.max_caption_length - caption_length]])
-          caption = tf.pad(caption, [[0,0],[0,maxlen - caption_length]], "CONSTANT")
-          caption = tf.slice(caption, [0,0], [batch_size, maxlen])
-          return caption
-
-        def pad_hyp_probs(caption_probs, maxlen):
-          # the length of caption must be smaller than maxlen
-          # caption: [batch_size, caption_length, vocab_size]
-          batch_size, caption_length, vocab_size = get_shape(caption_probs)
-          #paddings = tf.constant([[0,0],[0,FLAGS.max_caption_length - caption_length]])
-          caption_probs = tf.pad(caption_probs, [[0,0],[0,maxlen - caption_length], [0,0] ], "CONSTANT")
-          caption_probs = tf.slice(caption_probs, [0,0,0], [batch_size, maxlen, vocab_size])
-          return caption_probs
-
-
-        def pad_truncate_ref_caption(caption, seq_length, maxlen):
-          # pad or truncate based on the length of caption is smaller than maxlen or not
-          # caption: [batch_size, ref_num, caption_length]
-          batch_size, ref_num, _ = get_shape(caption)
-          max_length = tf.reduce_max(seq_length)
-          caption = tf.cond(maxlen > max_length,
-                            lambda: tf.pad(caption, [[0,0], [0,0], [0,maxlen-max_length]]),
-                            lambda: tf.identity(caption))
-          caption = tf.slice(caption, [0,0,0], [batch_size, ref_num, maxlen])
-          seq_length = tf.clip_by_value(seq_length, 0, maxlen)
-          return caption, seq_length
-
         greedy_captions = outputs["greedy_results"].sample_id
-        greedy_captions = pad_hyp_caption(greedy_captions, FLAGS.max_caption_length)
+        #greedy_captions = pad_hyp_caption(greedy_captions, FLAGS.max_caption_length)
         greedy_captions_sequence_lengths = outputs["greedy_results_sequence_lengths"]
         sample_captions = outputs["sample_results"].sample_id
-        sample_captions = pad_hyp_caption(sample_captions, FLAGS.max_caption_length)
+        #sample_captions = pad_hyp_caption(sample_captions, FLAGS.max_caption_length)
         sample_captions_sequence_lengths = outputs["sample_results_sequence_lengths"]
 
         print("rl debug:")
@@ -390,26 +359,26 @@ class Im2TxtModel(object):
           self.input_mask = tf.expand_dims(self.input_mask,1)
 
         target_sequence_lengths = tf.reduce_sum(self.input_mask, -1)
-        target_seqs, target_sequence_lengths = pad_truncate_ref_caption(
-                                                  self.target_seqs,
-                                                  target_sequence_lengths,
-                                                  FLAGS.max_ref_length)
-        print("target_seqs:", target_seqs)
+        #target_seqs, target_sequence_lengths = pad_truncate_ref_caption(
+        #                                          self.target_seqs,
+        #                                          target_sequence_lengths,
+        #                                          FLAGS.max_ref_length)
+        print("target_seqs:", self.target_seqs)
         print("target_sequence_lengths:", target_sequence_lengths)
         reward = self.cider_scorer.score(greedy_captions,
                             greedy_captions_sequence_lengths,
-                            target_seqs,
+                            self.target_seqs,
                             target_sequence_lengths) - \
                  self.cider_scorer.score(sample_captions,
                             sample_captions_sequence_lengths,
-                            target_seqs,
+                            self.target_seqs,
                             target_sequence_lengths)
         reward = tf.stop_gradient(reward)
         print("reward:", reward)
         tf.summary.scalar("losses/reward", reward[0])
         # extract the logprobs of each word in sample_captions
         sample_probs = tf.nn.softmax(sample_logits)
-        sample_probs = pad_hyp_probs(sample_probs, FLAGS.max_caption_length)
+        #sample_probs = pad_hyp_probs(sample_probs, FLAGS.max_caption_length)
         batch_size, seq_length, _ = get_shape(sample_probs)
         weights = tf.cast(tf.sequence_mask(sample_captions_sequence_lengths, maxlen=seq_length), dtype=tf.float32)
         batch_index = tf.transpose(

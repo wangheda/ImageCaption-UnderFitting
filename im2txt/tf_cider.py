@@ -20,6 +20,37 @@ def get_shape(tensor):
           for s in zip(static_shape, dynamic_shape)]
   return dims
 
+def pad_hyp_caption(caption, maxlen):
+  # the length of caption must be smaller than maxlen
+  # caption: [batch_size, caption_length]
+  batch_size, caption_length = get_shape(caption)
+  #paddings = tf.constant([[0,0],[0,FLAGS.max_caption_length - caption_length]])
+  caption = tf.pad(caption, [[0,0],[0,maxlen - caption_length]], "CONSTANT")
+  caption = tf.slice(caption, [0,0], [batch_size, maxlen])
+  return caption
+
+def pad_hyp_probs(caption_probs, maxlen):
+  # the length of caption must be smaller than maxlen
+  # caption: [batch_size, caption_length, vocab_size]
+  batch_size, caption_length, vocab_size = get_shape(caption_probs)
+  #paddings = tf.constant([[0,0],[0,FLAGS.max_caption_length - caption_length]])
+  caption_probs = tf.pad(caption_probs, [[0,0],[0,maxlen - caption_length], [0,0] ], "CONSTANT")
+  caption_probs = tf.slice(caption_probs, [0,0,0], [batch_size, maxlen, vocab_size])
+  return caption_probs
+
+
+def pad_truncate_ref_caption(caption, seq_length, maxlen):
+  # pad or truncate based on the length of caption is smaller than maxlen or not
+  # caption: [batch_size, ref_num, caption_length]
+  batch_size, ref_num, _ = get_shape(caption)
+  max_length = tf.reduce_max(seq_length)
+  caption = tf.cond(maxlen > max_length,
+                    lambda: tf.pad(caption, [[0,0], [0,0], [0,maxlen-max_length]]),
+                    lambda: tf.identity(caption))
+  caption = tf.slice(caption, [0,0,0], [batch_size, ref_num, maxlen])
+  seq_length = tf.clip_by_value(seq_length, 0, maxlen)
+  return caption, seq_length
+
 class TFCiderScorer(object):
   def __init__(self):
     with open(FLAGS.document_frequency_file, 'r') as f:
@@ -52,6 +83,14 @@ class TFCiderScorer(object):
       ref_words = tf.expand_dims(ref_words, 1)
     if len(get_shape(ref_lengths)) == 1:
       ref_lengths = tf.expand_dims(ref_lengths, 1)
+
+    hyp_words = tf.stop_gradient(hyp_words)
+    hyp_words = pad_hyp_caption(hyp_words, FLAGS.max_caption_length)
+    ref_words = tf.stop_gradient(ref_words)
+    ref_words, ref_lengths = pad_truncate_ref_caption(
+                                  ref_words,
+                                  ref_lengths,
+                                  FLAGS.max_ref_length)
     
     def ngram_count(words, lengths, n=4):
       #shape = words.get_shape().as_list()
