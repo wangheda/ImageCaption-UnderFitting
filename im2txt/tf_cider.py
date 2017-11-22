@@ -37,7 +37,9 @@ class CiderScorer(object):
     df_values = df_data['df_values']
     ref_len = df_data['ref_len']
     self.df_table = tf.contrib.lookup.HashTable(
-          tf.contrib.lookup.KeyValueTensorInitializer(df_keys, df_values), 0)
+          tf.contrib.lookup.KeyValueTensorInitializer(
+                df_keys, df_values,
+                key_dtype=tf.int64, value_dtype=tf.float32), default_value = 0.0)
     self.ref_len = tf.constant(ref_len)
 
   def score(self, hyp_words, hyp_lengths, ref_words, ref_lengths, sigma=6.0):
@@ -50,13 +52,16 @@ class CiderScorer(object):
     return
     score:       [batch]
     """
+    hyp_words = tf.cast(hyp_words, dtype=tf.int64)
+    ref_words = tf.cast(ref_words, dtype=tf.int64)
+    
     def ngram_count(words, lengths, n=4):
       shape = words.get_shape().as_list()
       if len(shape) == 2:
         num_sents = 1
         batch, max_length = shape
-        words = tf.expand_dims(words, 1)
-        lengths = tf.expand_dims(lengths, 1)
+        words = tf.reshape(words, [batch, num_sents, max_length])
+        lengths = tf.reshape(lengths, [batch, num_sents])
       elif len(shape) == 3:
         batch, num_sents, max_length = shape
       else:
@@ -67,7 +72,6 @@ class CiderScorer(object):
       tmp_shifted = []
 
       words_idx = words + 1
-      words_idx = tf.cast(words_idx, dtype=tf.int64)
       log_tensor("words_idx", l=locals())
 
       for i in range(n):
@@ -118,6 +122,8 @@ class CiderScorer(object):
       text_freq = tf.reduce_sum(tmp12_equal * square_masks, axis=-1)
       doc_freq = self.df_table.lookup(ngrams)
       df_values = tf.log(tf.maximum(doc_freq, 1.0))
+
+      tf.summary.histogram("cider/document_freq", doc_freq)
 
       vec = text_freq * tf.maximum(self.ref_len - df_values, 0.0)
       norm = tf.reduce_sum(vec * vec * float_mask / (text_freq + 1e-12), axis=-1)

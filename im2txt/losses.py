@@ -76,6 +76,9 @@ class SparseSoftmaxCrossEntropyLoss(BaseLoss):
     return loss
 
 class SelfCriticalLoss(BaseLoss):
+  def __init__(self):
+    self.cider_scorer = tf_cider.CiderScorer()
+
   def calculate_loss(self,
                      target_caption_words, 
                      target_caption_lengths, 
@@ -86,7 +89,7 @@ class SelfCriticalLoss(BaseLoss):
                      sample_caption_logits, 
                      epsilon=1e-9, **unused_params):
 
-    cider_scorer = tf_cider.CiderScorer()
+    cider_scorer = self.cider_scorer
 
     log_tensor("greedy_caption_words", l=locals())
     log_tensor("greedy_caption_lengths", l=locals())
@@ -104,8 +107,11 @@ class SelfCriticalLoss(BaseLoss):
                                       sample_caption_lengths,
                                       target_caption_words,
                                       target_caption_lengths)
-    tf.summary.scalar("losses/greedy_score", tf.reduce_mean(greedy_score))
-    tf.summary.scalar("losses/sample_score", tf.reduce_mean(sample_score))
+
+    tf.summary.histogram("losses/greedy_score", greedy_score)
+    tf.summary.histogram("losses/sample_score", sample_score)
+    tf.summary.histogram("losses/greedy_caption_lengths", greedy_caption_lengths)
+    tf.summary.histogram("losses/sample_caption_lengths", sample_caption_lengths)
 
     # reward = -1 * reward
     reward = greedy_score - sample_score
