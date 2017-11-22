@@ -35,5 +35,6 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail
     python ${DIR}/tools/eval/run_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE 2> ${OUTPUT_DIR}/err.eval | tee ${OUTPUT_DIR}/out.eval | grep ^Eval
     echo eval result saved to ${OUTPUT_DIR}/out.eval
   fi
+  exit 1
 done
 

@@ -2,10 +2,11 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_advanced_model_visual_attention_lexical_finetune_with_decay"
-num_processes=1
-device=1
-model=ShowAndTellAdvancedModel
+model_name="semantic_attention_model_join_da"
+num_processes=2
+gpu_fraction=0.45
+device=0
+model=SemanticAttentionModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
 for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do 
@@ -26,15 +27,11 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --input_file_pattern='${VALIDATE_IMAGE_DIR}/${prefix}*.jpg' \
         --checkpoint_path=${CHECKPOINT_PATH} \
         --vocab_file=${DIR}/data/word_counts.txt \
+        --attributes_file=${DIR}/data/attributes.txt \
         --output=${OUTPUT_DIR}/part-${prefix}.json \
         --model=${model} \
-        --inception_return_tuple=True \
-        --use_attention_wrapper=True \
-        --attention_mechanism=BahdanauAttention \
-        --use_lexical_embedding=True \
-        --lexical_mapping_file='${DIR}/data/word2postag.txt' \
-        --num_lstm_layers=2 \
-        --support_ingraph=True"
+        --support_ingraph=True \
+        --gpu_memory_fraction=$gpu_fraction"
     fi
   done | bash #parallel -j $num_processes
 

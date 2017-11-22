@@ -2,10 +2,11 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_advanced_model_visual_attention_lexical_finetune_with_decay"
-num_processes=1
+model_name="review_network_model"
+num_processes=2
+gpu_fraction=0.45
 device=1
-model=ShowAndTellAdvancedModel
+model=ReviewNetworkModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
 for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do 
@@ -28,15 +29,10 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --vocab_file=${DIR}/data/word_counts.txt \
         --output=${OUTPUT_DIR}/part-${prefix}.json \
         --model=${model} \
-        --inception_return_tuple=True \
-        --use_attention_wrapper=True \
-        --attention_mechanism=BahdanauAttention \
-        --use_lexical_embedding=True \
-        --lexical_mapping_file='${DIR}/data/word2postag.txt' \
-        --num_lstm_layers=2 \
-        --support_ingraph=True"
+        --support_ingraph=True \
+        --gpu_memory_fraction=$gpu_fraction"
     fi
-  done | bash #parallel -j $num_processes
+  done | parallel -j $num_processes
 
   if [ ! -f ${OUTPUT_DIR}/out.json ]; then
     python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json

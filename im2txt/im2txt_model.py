@@ -423,42 +423,60 @@ class Im2TxtModel(object):
         tf.summary.scalar("losses/batch_loss", batch_loss)
         self.target_cross_entropy_losses = losses  # Used in evaluation.
         self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
+        
+        # multi-label-loss
+        if "attributes_logits" in outputs and "attributes_mask" in outputs:
+          attributes_logits = outputs["attributes_logits"]
+          attributes_mask = outputs["attributes_mask"]
+          attributes_targets = input_ops.get_attributes_target(self.target_seqs, attributes_mask)
+
+          attributes_loss = tf.nn.sigmoid_cross_entropy_with_logits(
+            labels=attributes_targets,
+            logits=attributes_logits)
+
+          if FLAGS.use_idf_weighted_attribute_loss:
+            attributes_loss_mask = outputs["idf_weighted_mask"]
+          else:
+            attributes_loss_mask = attributes_mask
+          attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_loss_mask)),
+                                   tf.reduce_sum(attributes_loss_mask),
+                                   name="attributes_loss")
+
+          tf.losses.add_loss(attributes_loss)
+          tf.summary.scalar("losses/attributes_loss", attributes_loss)
+          self.attributes_loss = attributes_loss
+
+        # discriminative loss
+        # should be multi-label margin loss, but the loss below is a little different
+        if "discriminative_logits" in outputs:
+          word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
+          discriminative_loss = tf.losses.hinge_loss(labels=word_labels,
+                                                     logits=outputs["discriminative_logits"],
+                                                     weights=FLAGS.discriminative_loss_weights)
+          tf.summary.scalar("losses/discriminative_loss", discriminative_loss)
+          self.discriminative_loss = discriminative_loss
 
 
-      # multi-label-loss
-      if "attributes_logits" in outputs and "attributes_mask" in outputs:
-        attributes_logits = outputs["attributes_logits"]
-        attributes_mask = outputs["attributes_mask"]
-        attributes_targets = input_ops.get_attributes_target(self.target_seqs, attributes_mask)
+        # Compute losses.
+        losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
+                                                                logits=logits)
+        batch_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
+                            tf.reduce_sum(weights),
+                            name="batch_loss")
+        tf.losses.add_loss(batch_loss)
 
-        attributes_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-          labels=attributes_targets,
-          logits=attributes_logits)
-
-        if FLAGS.use_idf_weighted_attribute_loss:
-          attributes_loss_mask = outputs["idf_weighted_mask"]
-        else:
-          attributes_loss_mask = attributes_mask
-        attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_loss_mask)),
-                                 tf.reduce_sum(attributes_loss_mask),
-                                 name="attributes_loss")
-
-        tf.losses.add_loss(attributes_loss)
-        tf.summary.scalar("losses/attributes_loss", attributes_loss)
-        self.attributes_loss = attributes_loss
-
-      # word loss
-      if "word_predictions" in outputs:
-        word_predictions = outputs["word_predictions"]
-        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
-        word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
-                                                            logits=word_predictions)
-        word_loss = tf.div(tf.reduce_sum(word_loss),
-                           reduce(lambda x,y: x*y, word_loss.get_shape().as_list()),
-                           name="word_loss")
-        tf.losses.add_loss(word_loss)
-        tf.summary.scalar("losses/word_loss", word_loss)
-        self.word_loss = word_loss
+        # word weighted cross entropy loss
+        if "word_predictions" in outputs:
+          word_predictions = outputs["word_predictions"]
+          word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
+          word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
+                                                              logits=word_predictions)
+          word_loss = tf.div(tf.reduce_sum(word_loss),
+                             reduce(lambda x,y: x*y, word_loss.get_shape().as_list()),
+                             name="word_loss")
+          tf.losses.add_loss(word_loss)
+          tf.summary.scalar("losses/word_loss", word_loss)
+          self.word_loss = word_loss
 
       total_loss = tf.losses.get_total_loss()
 

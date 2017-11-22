@@ -9,6 +9,7 @@
 
 from cider_scorer import CiderScorer
 import pdb
+import sys
 
 class Cider:
     """
@@ -33,6 +34,7 @@ class Cider:
         imgIds = gts.keys()
 
         cider_scorer = CiderScorer(n=self._n, sigma=self._sigma)
+        print >> sys.stderr, cider_scorer
 
         for id in imgIds:
             hypo = res[id]

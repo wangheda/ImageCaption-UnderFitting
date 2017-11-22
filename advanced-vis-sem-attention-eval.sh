@@ -2,9 +2,10 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_advanced_model_visual_attention_lexical_finetune_with_decay"
+model_name="show_and_tell_advanced_model_new_vis_sem_attention"
 num_processes=1
-device=1
+gpu_fraction=1.0
+device=0
 model=ShowAndTellAdvancedModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
@@ -20,26 +21,25 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
 
   cd ${DIR}/im2txt
 
-  for prefix in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do 
-    if [ ! -f ${OUTPUT_DIR}/part-${prefix}.json ]; then
-      echo "CUDA_VISIBLE_DEVICES=$device python inference.py \
-        --input_file_pattern='${VALIDATE_IMAGE_DIR}/${prefix}*.jpg' \
-        --checkpoint_path=${CHECKPOINT_PATH} \
-        --vocab_file=${DIR}/data/word_counts.txt \
-        --output=${OUTPUT_DIR}/part-${prefix}.json \
-        --model=${model} \
-        --inception_return_tuple=True \
-        --use_attention_wrapper=True \
-        --attention_mechanism=BahdanauAttention \
-        --use_lexical_embedding=True \
-        --lexical_mapping_file='${DIR}/data/word2postag.txt' \
-        --num_lstm_layers=2 \
-        --support_ingraph=True"
-    fi
-  done | bash #parallel -j $num_processes
-
   if [ ! -f ${OUTPUT_DIR}/out.json ]; then
-    python ${DIR}/tools/merge_json_lists.py ${OUTPUT_DIR}/part-?.json > ${OUTPUT_DIR}/out.json
+    CUDA_VISIBLE_DEVICES=$device python inference.py \
+      --input_file_pattern="${VALIDATE_IMAGE_DIR}/${prefix}*.jpg" \
+      --checkpoint_path=${CHECKPOINT_PATH} \
+      --vocab_file=${DIR}/data/word_counts.txt \
+      --output=${OUTPUT_DIR}/out.json \
+      --model=${model} \
+      --inception_return_tuple=True \
+      --use_attention_wrapper=True \
+      --attention_mechanism=BahdanauAttention \
+      --num_lstm_layers=1 \
+      --predict_words_via_image_output=True \
+      --use_semantic_attention=True \
+      --semantic_attention_type="topk" \
+      --semantic_attention_topk_word=10 \
+      --use_separate_embedding_for_semantic_attention=True \
+      --semantic_attention_word_hash_depth=128 \
+      --support_ingraph=True \
+      --gpu_memory_fraction=$gpu_fraction
     echo output saved to ${OUTPUT_DIR}/out.json
   fi
 
