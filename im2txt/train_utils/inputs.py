@@ -23,6 +23,8 @@ from __future__ import print_function
 import tensorflow as tf
 FLAGS = tf.flags.FLAGS
 
+from .image_processing import simple_process_image
+
 
 def parse_sequence_example(serialized, image_feature, caption_feature, flip_caption_feature=None):
   """Parses a tensorflow.SequenceExample into an image and caption.
@@ -237,3 +239,51 @@ def caption_to_multi_labels(captions):
   labels = tf.map_fn(lambda x: c2ml(x), captions, dtype=tf.float32)
   print("labels", labels)
   return labels
+
+def get_images_and_captions(is_training):
+  # Prefetch serialized SequenceExample protos.
+  input_queue = prefetch_input_data(
+      tf.TFRecordReader(),
+      FLAGS.input_file_pattern,
+      is_training=is_training,
+      batch_size=FLAGS.batch_size,
+      values_per_shard=FLAGS.values_per_input_shard,
+      input_queue_capacity_factor=FLAGS.input_queue_capacity_factor,
+      num_reader_threads=FLAGS.num_input_reader_threads)
+
+  # Image processing and random distortion. Split across multiple threads
+  # with each thread applying a slightly different distortion.
+  assert FLAGS.num_preprocess_threads % 2 == 0
+  images_and_captions = []
+  for thread_id in range(FLAGS.num_preprocess_threads):
+    serialized_sequence_example = input_queue.dequeue()
+    if FLAGS.support_flip:
+      encoded_image, caption, flip_caption = parse_sequence_example(
+          serialized_sequence_example,
+          image_feature=FLAGS.image_feature_name,
+          caption_feature=FLAGS.caption_feature_name,
+          flip_caption_feature=FLAGS.flip_caption_feature_name)
+      # random decides flip or not
+      flip_image = simple_process_image(encoded_image, thread_id=thread_id, flip=True, is_training=is_training)
+      image = self.process_image(encoded_image, thread_id=thread_id, flip=False, is_training=is_training)
+      maybe_flip_image, maybe_flip_caption = tf.cond(
+                          tf.less(tf.random_uniform([],0,1.0), 0.5), 
+                          lambda: [flip_image, flip_caption], 
+                          lambda: [image, caption])
+      images_and_captions.append([maybe_flip_image, maybe_flip_caption])
+    else:
+      encoded_image, caption, _ = parse_sequence_example(
+          serialized_sequence_example,
+          image_feature=FLAGS.image_feature_name,
+          caption_feature=FLAGS.caption_feature_name)
+      image = simple_process_image(encoded_image, thread_id=thread_id, flip=False, is_training=is_training)
+      images_and_captions.append([image, caption])
+
+  # Batch inputs.
+  queue_capacity = (2 * FLAGS.num_preprocess_threads *
+                    FLAGS.batch_size)
+  images, input_seqs, target_seqs, input_mask = (
+      batch_with_dynamic_pad(images_and_captions,
+                                       batch_size=FLAGS.batch_size,
+                                       queue_capacity=queue_capacity))
+  return images, input_seqs, target_seqs, input_mask

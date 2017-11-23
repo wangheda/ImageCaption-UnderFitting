@@ -14,6 +14,19 @@ FLAGS = tf.app.flags.FLAGS
 
 LOG_TENSOR = True
 
+def log_tensor(name, g=None, l=None):
+  if LOG_TENSOR:
+    if g is None and l is None:
+      print >> sys.stderr, name, eval(name, {"self":self})
+    else:
+      print >> sys.stderr, name, eval(name, g, l)
+
+def get_rank(tensor):
+  return len(get_shape_as_list(tensor))
+
+def get_shape_as_list(tensor):
+  return tensor.get_shape().as_list()
+
 def get_shape(tensor):
   """Returns static shape if available and dynamic shape otherwise."""
   static_shape = tensor.shape.as_list()
@@ -22,38 +35,7 @@ def get_shape(tensor):
           for s in zip(static_shape, dynamic_shape)]
   return dims
 
-def pad_hyp_caption(caption, maxlen):
-  # the length of caption must be smaller than maxlen
-  # caption: [batch_size, caption_length]
-  batch_size, caption_length = get_shape(caption)
-  #paddings = tf.constant([[0,0],[0,FLAGS.max_caption_length - caption_length]])
-  caption = tf.pad(caption, [[0,0],[0,maxlen - caption_length]], "CONSTANT")
-  caption = tf.slice(caption, [0,0], [batch_size, maxlen])
-  return caption
-
-def pad_hyp_probs(caption_probs, maxlen):
-  # the length of caption must be smaller than maxlen
-  # caption: [batch_size, caption_length, vocab_size]
-  batch_size, caption_length, vocab_size = get_shape(caption_probs)
-  #paddings = tf.constant([[0,0],[0,FLAGS.max_caption_length - caption_length]])
-  caption_probs = tf.pad(caption_probs, [[0,0],[0,maxlen - caption_length], [0,0] ], "CONSTANT")
-  caption_probs = tf.slice(caption_probs, [0,0,0], [batch_size, maxlen, vocab_size])
-  return caption_probs
-
-
-def pad_truncate_ref_caption(caption, seq_length, maxlen):
-  # pad or truncate based on the length of caption is smaller than maxlen or not
-  # caption: [batch_size, ref_num, caption_length]
-  batch_size, ref_num, _ = get_shape(caption)
-  max_length = tf.reduce_max(seq_length)
-  caption = tf.cond(maxlen > max_length,
-                    lambda: tf.pad(caption, [[0,0], [0,0], [0,maxlen-max_length]]),
-                    lambda: tf.identity(caption))
-  caption = tf.slice(caption, [0,0,0], [batch_size, ref_num, maxlen])
-  seq_length = tf.clip_by_value(seq_length, 0, maxlen)
-  return caption, seq_length
-
-class TFCiderScorer(object):
+class CiderScorer(object):
   def __init__(self):
     with open(FLAGS.document_frequency_file, 'r') as f:
       df_data = json.load(f)
@@ -61,7 +43,9 @@ class TFCiderScorer(object):
     df_values = df_data['df_values']
     ref_len = df_data['ref_len']
     self.df_table = tf.contrib.lookup.HashTable(
-          tf.contrib.lookup.KeyValueTensorInitializer(df_keys, df_values), 0)
+          tf.contrib.lookup.KeyValueTensorInitializer(
+                df_keys, df_values,
+                key_dtype=tf.int64, value_dtype=tf.float32), default_value = 0.0)
     self.ref_len = tf.constant(ref_len)
 
   def score(self, hyp_words, hyp_lengths, ref_words, ref_lengths, sigma=6.0):
@@ -74,45 +58,34 @@ class TFCiderScorer(object):
     return
     score:       [batch]
     """
-    def log_tensor(name, g=None, l=None):
-      if LOG_TENSOR:
-        if g is None and l is None:
-          print >> sys.stderr, name, eval(name, {"self":self})
-        else:
-          print >> sys.stderr, name, eval(name, g, l)
 
-    if len(get_shape(ref_words)) == 2:
-      ref_words = tf.expand_dims(ref_words, 1)
-    if len(get_shape(ref_lengths)) == 1:
-      ref_lengths = tf.expand_dims(ref_lengths, 1)
+    hyp_words = tf.cast(hyp_words, dtype=tf.int64)
+    ref_words = tf.cast(ref_words, dtype=tf.int64)
 
-    hyp_words = tf.stop_gradient(hyp_words)
-    hyp_words = pad_hyp_caption(hyp_words, FLAGS.max_caption_length)
-    ref_words = tf.stop_gradient(ref_words)
-    ref_words, ref_lengths = pad_truncate_ref_caption(
-                                  ref_words,
-                                  ref_lengths,
-                                  FLAGS.max_ref_length)
-    
+    if get_rank(hyp_words) == 2:
+      hyp_words = tf.expand_dims(hyp_words, axis=1)
+      hyp_lengths = tf.expand_dims(hyp_lengths, axis=1)
+    if get_rank(ref_words) == 2:
+      ref_words = tf.expand_dims(ref_words, axis=1)
+      ref_lengths = tf.expand_dims(ref_lengths, axis=1)
+
+    log_tensor("hyp_words", l=locals())
+    log_tensor("hyp_lengths", l=locals())
+    log_tensor("ref_words", l=locals())
+    log_tensor("ref_lengths", l=locals())
+
     def ngram_count(words, lengths, n=4):
       shape = words.get_shape().as_list()
-      if len(shape) == 2:
-        num_sents = 1
-        batch, max_length = shape
-        words = tf.expand_dims(words, 1)
-        lengths = tf.expand_dims(lengths, 1)
-      elif len(shape) == 3:
+      if len(shape) == 3:
         batch, num_sents, max_length = shape
       else:
-        raise NotImplementedError("tensor must be of rank 2 or 3")
-      
+        raise NotImplementedError("tensor must be of rank 3")
       
       tmp_ngrams = []
       tmp_lengths = []
       tmp_shifted = []
 
       words_idx = words + 1
-      words_idx = tf.cast(words_idx, dtype=tf.int64)
       log_tensor("words_idx", l=locals())
 
       for i in range(n):
@@ -164,9 +137,15 @@ class TFCiderScorer(object):
       doc_freq = self.df_table.lookup(ngrams)
       df_values = tf.log(tf.maximum(doc_freq, 1.0))
 
+      tf.summary.histogram("cider/document_freq", doc_freq)
+      tf.summary.histogram("cider/text_freq", text_freq)
+      tf.summary.histogram("cider/df_values", df_values)
+
       vec = text_freq * tf.maximum(self.ref_len - df_values, 0.0)
       norm = tf.reduce_sum(vec * vec * float_mask / (text_freq + 1e-12), axis=-1)
       norm = tf.sqrt(norm)
+      tf.summary.histogram("cider/vec", vec)
+      tf.summary.histogram("cider/norm", norm)
       return vec, norm, text_freq
 
     def sim(hyp_vec, hyp_norm, hyp_tf, hyp_lengths, hyp_ngrams, hyp_ngram_lengths,
@@ -186,8 +165,17 @@ class TFCiderScorer(object):
       batch, num_sents, n, max_hyp_length = hyp_vec.get_shape().as_list()
       _, _, _, max_ref_length = ref_vec.get_shape().as_list()
       
+      log_tensor("hyp_vec", l=locals())
+      log_tensor("hyp_norm", l=locals())
+      log_tensor("hyp_ngrams", l=locals())
+      log_tensor("hyp_ngram_lengths", l=locals())
+      log_tensor("ref_vec", l=locals())
+      log_tensor("ref_norm", l=locals())
+      log_tensor("ref_ngrams", l=locals())
+      log_tensor("ref_ngram_lengths", l=locals())
 
       delta = tf.cast(hyp_lengths - ref_lengths, tf.float32)
+      log_tensor("delta", l=locals())
 
       ref_masks = tf.cast(tf.reshape(
                     tf.sequence_mask(
@@ -218,11 +206,15 @@ class TFCiderScorer(object):
                            axis=[-2,-1])
 
       val = prod / (hyp_norm * ref_norm + 1e-12)
+      log_tensor("val", l=locals())
                            
       mult = np.e ** (-(delta ** 2) / ((sigma ** 2) * 2))
       mask = tf.cast(ref_lengths > 0, dtype=tf.float32)
 
       scores = val * tf.expand_dims(mult, axis=2) * tf.expand_dims(mask, axis=2)
+      tf.summary.histogram("cider/scores", scores)
+
+      log_tensor("scores", l=locals())
 
       score_avg = tf.reduce_sum(scores, axis=[1,2]) \
                   / (tf.reduce_sum(mask, axis=1) * float(n) + 1e-12)

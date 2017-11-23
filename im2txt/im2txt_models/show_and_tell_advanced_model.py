@@ -260,7 +260,7 @@ class ShowAndTellAdvancedModel(object):
       # lstm_scope.reuse_variables()
 
       if mode == "train":
-        if FLAGS.rl_train == True:
+        if FLAGS.rl_training == True:
           # use rl train
           # 1. generate greedy captions
           greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
@@ -346,7 +346,7 @@ class ShowAndTellAdvancedModel(object):
         raise Exception("Unknown mode!")
 
       if mode == "train":
-        if FLAGS.rl_train == True:
+        if FLAGS.rl_training == True:
           maximum_iterations = FLAGS.max_caption_length
         else:
           maximum_iterations = None
@@ -360,7 +360,7 @@ class ShowAndTellAdvancedModel(object):
         maximum_iterations=maximum_iterations)
 
     if mode == "train":
-      if FLAGS.rl_train == True:
+      if FLAGS.rl_training == True:
         return {"sample_results": outputs,
                 "sample_results_sequence_lengths": outputs_sequence_lengths,
                 "greedy_results": greedy_outputs,

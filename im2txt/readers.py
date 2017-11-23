@@ -25,10 +25,11 @@ from tensorflow import logging
 from tensorflow import flags
 
 FLAGS = flags.FLAGS
-flags.DEFINE_bool("use_image_distortion", True,
-    "Whether to augmenting images before apply them.")
-flags.DEFINE_bool("image_distortion_flip_horizontal", False,
-    "Whether to flip images horizontally before apply them.")
+tf.flags.DEFINE_integer("reader_num_refs", 5,
+                        "Number of caption lines for each of the images.")
+tf.flags.DEFINE_integer("reader_max_ref_length", 30,
+                        "The maximum length of caption for each of the images.")
+
 
 class BaseReader(object):
   """Inherit from this class when implementing new readers."""
@@ -38,317 +39,101 @@ class BaseReader(object):
     raise NotImplementedError()
 
 
-def distort_image(image, thread_id):
-  """Perform random distortions on an image.
-
-  Args:
-    image: A float32 Tensor of shape [height, width, 3] with values in [0, 1).
-    thread_id: Preprocessing thread id used to select the ordering of color
-      distortions. There should be a multiple of 2 preprocessing threads.
-
-  Returns:
-    distorted_image: A float32 Tensor of shape [height, width, 3] with values in
-      [0, 1].
-  """
-  # Randomly flip horizontally.
-  with tf.name_scope("flip_horizontal", values=[image]):
-    image = tf.image.random_flip_left_right(image)
-
-  # Randomly distort the colors based on thread id.
-  color_ordering = thread_id % 2
-  with tf.name_scope("distort_color", values=[image]):
-    if color_ordering == 0:
-      image = tf.image.random_brightness(image, max_delta=32. / 255.)
-      image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
-      image = tf.image.random_hue(image, max_delta=0.032)
-      image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
-    elif color_ordering == 1:
-      image = tf.image.random_brightness(image, max_delta=32. / 255.)
-      image = tf.image.random_contrast(image, lower=0.5, upper=1.5)
-      image = tf.image.random_saturation(image, lower=0.5, upper=1.5)
-      image = tf.image.random_hue(image, max_delta=0.032)
-
-    # The random_* ops do not necessarily clamp.
-    image = tf.clip_by_value(image, 0.0, 1.0)
-
-  return image
-
-
-def process_image(encoded_image,
-                  is_training,
-                  height,
-                  width,
-                  resize_height=346,
-                  resize_width=346,
-                  thread_id=0,
-                  image_format="jpeg"):
-  """Decode an image, resize and apply random distortions.
-
-  In training, images are distorted slightly differently depending on thread_id.
-
-  Args:
-    encoded_image: String Tensor containing the image.
-    is_training: Boolean; whether preprocessing for training or eval.
-    height: Height of the output image.
-    width: Width of the output image.
-    resize_height: If > 0, resize height before crop to final dimensions.
-    resize_width: If > 0, resize width before crop to final dimensions.
-    thread_id: Preprocessing thread id used to select the ordering of color
-      distortions. There should be a multiple of 2 preprocessing threads.
-    image_format: "jpeg" or "png".
-
-  Returns:
-    A float32 Tensor of shape [height, width, 3] with values in [-1, 1].
-
-  Raises:
-    ValueError: If image_format is invalid.
-  """
-  # Helper function to log an image summary to the visualizer. Summaries are
-  # only logged in thread 0.
-  def image_summary(name, image):
-    if not thread_id:
-      tf.summary.image(name, tf.expand_dims(image, 0))
-
-  # Decode image into a float32 Tensor of shape [?, ?, 3] with values in [0, 1).
-  with tf.name_scope("decode", values=[encoded_image]):
-    if image_format == "jpeg":
-      image = tf.image.decode_jpeg(encoded_image, channels=3)
-    elif image_format == "png":
-      image = tf.image.decode_png(encoded_image, channels=3)
-    else:
-      raise ValueError("Invalid image format: %s" % image_format)
-  image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-  image_summary("original_image", image)
-
-  # Resize image.
-  assert (resize_height > 0) == (resize_width > 0)
-  if resize_height:
-    image = tf.image.resize_images(image,
-                                   size=[resize_height, resize_width],
-                                   method=tf.image.ResizeMethod.BILINEAR)
-
-  # Crop to final dimensions.
-  if is_training:
-    image = tf.random_crop(image, [height, width, 3])
-  else:
-    # Central crop, assuming resize_height > height, resize_width > width.
-    image = tf.image.resize_image_with_crop_or_pad(image, height, width)
-
-  image_summary("resized_image", image)
-
-  # Randomly distort the image.
-  if is_training:
-    image = distort_image(image, thread_id)
-
-  image_summary("final_image", image)
-
-  # Rescale to [-1,1] instead of [0, 1]
-  image = tf.subtract(image, 0.5)
-  image = tf.multiply(image, 2.0)
-  return image
-  
 class ImageCaptionReader(BaseReader):
-  """Reads TFRecords of pre-aggregated Examples.
-
-  The TFRecords must contain Examples with a sparse int64 'labels' feature and
-  a fixed length float32 feature, obtained from the features in 'feature_name'.
-  The float features are assumed to be an average of dequantized values.
-  """
 
   def __init__(self,
-               width=1918,
-               height=1280,
-               channels=3):
-    """Construct a CarvanaFeatureReader.
-
-    Args:
-      num_classes: a positive integer for the number of classes.
-      feature_sizes: positive integer(s) for the feature dimensions as a list.
-      feature_names: the feature name(s) in the tensorflow record as a list.
-    """
-    self.width = width
-    self.height = height
-    self.channels = channels
+               num_refs=5,
+               max_ref_length=30,
+               is_training=True):
+    self.num_refs = num_refs
+    self.max_ref_length = max_ref_length 
+    self.is_training = is_training
 
   def prepare_reader(self, filename_queue, batch_size=16):
-    """Creates a single reader thread for .
-
-    Args:
-      filename_queue: A tensorflow queue of filename locations.
-
-    Returns:
-      A tuple of video indexes, features, labels, and padding data.
-    """
     reader = tf.TFRecordReader()
     _, serialized_examples = reader.read(filename_queue)
 
-    feature_map = {"id": tf.FixedLenFeature([], tf.string),
-                   "image": tf.FixedLenFeature([], tf.string),
-                   "mask": tf.FixedLenFeature([], tf.string)}
+    num_words = self.num_refs * self.max_ref_length
+    feature_map = {
+        "image/id": tf.FixedLenFeature([], tf.string),
+        "image/data": tf.FixedLenFeature([], tf.string),
+        "image/ref_lengths": tf.FixedLenFeature([self.num_refs], tf.int64),
+        "image/ref_words": tf.FixedLenFeature([num_words], tf.int64),
+        "image/flipped_ref_words": tf.FixedLenFeature([num_words], tf.int64),
+      }
 
     features = tf.parse_single_example(serialized_examples, features=feature_map)
-    print >> sys.stderr, " features", features
+    print(" features", features)
 
-    image_id = features["id"]
-    image_data = features["image"]
-    image_mask = features["mask"]
-    print >> sys.stderr, " image_id", image_id
-    print >> sys.stderr, " image_data", image_data
-    print >> sys.stderr, " image_mask", image_mask
-
-    # reshape to rank1
-    image_id = tf.reshape(image_id, shape=[1])
+    # [1]
+    image_id = features["image/id"] 
+    print(" image_id", image_ids)
 
     # [height, width, channels]
-    image_data = tf.image.decode_jpeg(image_data, channels=3)
-    # image_data.set_shape(self.height * self.width * self.channels)
-    image_data = tf.reshape(image_data, shape=[self.height, self.width, self.channels])
-    print >> sys.stderr, " image_data", image_data
+    encoded_image = features["image/data"]
+    image = simple_process_image(encoded_image,
+                                 flip=False,
+                                 is_training=self.is_training)
+    flipped_image = simple_process_image(encoded_image,
+                                 flip=True,
+                                 is_training=self.is_training)
+    ref_words = features["image/ref_words"]
+    flipped_ref_words = features["image/flipped_ref_words"]
+    maybe_flipped_image, maybe_flipped_captions = tf.cond(
+                        tf.less(tf.random_uniform([],0,1.0), 0.5), 
+                        lambda: [flipped_image, flipped_ref_words], 
+                        lambda: [image, ref_words])
+    print(" image", images)
 
-    # [height, width]
-    image_mask = tf.decode_raw(image_mask, tf.uint8)
-    image_mask.set_shape(self.height * self.width)
-    image_mask = tf.reshape(image_mask, shape=[self.height, self.width])
-    image_mask = tf.greater(image_mask, 0)
-    print >> sys.stderr, " image_mask", image_mask
+    image_id = tf.reshape(image_id,
+                          shape=[1])
+    image = tf.reshape(maybe_flipped_image, 
+                       shape=[1, FLAGS.image_height, FLAGS.image_width])
+    ref_words = tf.reshape(maybe_flipped_captions,
+                              shape=[1, self.num_refs, self.max_ref_length])
+    ref_lengths = tf.reshape(features["image/ref_lengths"], 
+                             shape=[1, self.num_refs])
 
-    # image augmentation
-    if hasattr(FLAGS, "use_data_augmentation") and FLAGS.use_data_augmentation:
-      image_data, image_mask = image_augmentation(image_data, image_mask)
-
-    image_data = tf.reshape(image_data, shape=[1, self.height, self.width, self.channels])
-    image_mask = tf.reshape(image_mask, shape=[1, self.height, self.width])
-    return image_id, image_data, image_mask
-
-
-class CarvanaPredictionFeatureReader(BaseReader):
-  """Reads TFRecords of pre-aggregated Examples.
-
-  The TFRecords must contain Examples with a sparse int64 'labels' feature and
-  a fixed length float32 feature, obtained from the features in 'feature_name'.
-  The float features are assumed to be an average of dequantized values.
-  """
-
-  def __init__(self,
-               width=1918,
-               height=1280,
-               channels=3):
-    """Construct a CarvanaFeatureReader.
-
-    Args:
-      num_classes: a positive integer for the number of classes.
-      feature_sizes: positive integer(s) for the feature dimensions as a list.
-      feature_names: the feature name(s) in the tensorflow record as a list.
-    """
-    self.width = width
-    self.height = height
-    self.channels = channels
-
-  def prepare_reader(self, filename_queue, batch_size=16):
-    """Creates a single reader thread for .
-
-    Args:
-      filename_queue: A tensorflow queue of filename locations.
-
-    Returns:
-      A tuple of video indexes, features, labels, and padding data.
-    """
-    reader = tf.TFRecordReader()
-    _, serialized_examples = reader.read(filename_queue)
-
-    feature_map = {"id": tf.FixedLenFeature([], tf.string),
-                   "image": tf.FixedLenFeature([], tf.string),
-                   "mask": tf.FixedLenFeature([], tf.string)}
-
-    features = tf.parse_single_example(serialized_examples, features=feature_map)
-    print >> sys.stderr, " features", features
-
-    image_id = features["id"]
-    image_data = features["image"]
-    image_mask = features["mask"]
-    print >> sys.stderr, " image_id", image_id
-    print >> sys.stderr, " image_data", image_data
-    print >> sys.stderr, " image_mask", image_mask
-
-    # reshape to rank1
-    image_id = tf.reshape(image_id, shape=[1])
-
-    # [height, width, channels]
-    image_data = tf.decode_raw(image_data, tf.uint8)
-    image_data.set_shape(self.height * self.width * self.channels)
-    image_data = tf.reshape(image_data, shape=[self.height, self.width, self.channels])
-    print >> sys.stderr, " image_data", image_data
-
-    # [height, width]
-    image_mask = tf.decode_raw(image_mask, tf.uint8)
-    image_mask.set_shape(self.height * self.width)
-    image_mask = tf.reshape(image_mask, shape=[self.height, self.width])
-    image_mask = tf.greater(image_mask, 0)
-    print >> sys.stderr, " image_mask", image_mask
-
-    # image augmentation
-    if hasattr(FLAGS, "use_data_augmentation") and FLAGS.use_data_augmentation:
-      image_data, image_mask = image_augmentation(image_data, image_mask)
-
-    image_data = tf.reshape(image_data, shape=[1, self.height, self.width, self.channels])
-    image_mask = tf.reshape(image_mask, shape=[1, self.height, self.width])
-    return image_id, image_data, image_mask
+    if FLAGS.multiple_references:
+      return image, ref_words, ref_lengths
+    else:
+      images = tf.tile(image, multiples=[self.num_refs,1,1])
+      input_seqs = tf.reshape(ref_words, 
+                              shape=[self.num_refs, self.max_ref_length])
+      target_seqs = tf.concat([input_seqs[:,1:], tf.zeros([self.num_refs,1])], 
+                              axis=1)
+      input_lengths = tf.maximum(ref_lengths-1, 0)
+      input_mask = tf.sequence_mask(tf.reshape(input_lengths, shape=[-1]),
+                                    maxlen=FLAGS.max_ref_length)
+      return images, input_seqs, target_seqs, input_mask
 
 
-class CarvanaTestFeatureReader(BaseReader):
-  """Reads TFRecords of pre-aggregated Examples.
+def get_input_data_tensors(data_pattern=None,
+                           batch_size=16,
+                           num_epochs=None,
+                           is_training=True,
+                           num_readers=1):
+  reader = ImageCaptionReader(num_refs=FLAGS.num_refs,
+                              max_ref_length=FLAGS.max_ref_length)
+  logging.info("Using batch size of " + str(batch_size) + " for training.")
+  with tf.name_scope("train_input"):
+    files = gfile.Glob(data_pattern)
+    print("number of training files:", len(files))
+    if not files:
+      raise IOError("Unable to find training files. data_pattern='" +
+                    data_pattern + "'.")
+    logging.info("Number of training files: %s.", str(len(files)))
+    filename_queue = tf.train.string_input_producer(
+        files, num_epochs=num_epochs, shuffle=True)
 
-  The TFRecords must contain Examples with a sparse int64 'labels' feature and
-  a fixed length float32 feature, obtained from the features in 'feature_name'.
-  The float features are assumed to be an average of dequantized values.
-  """
+    training_data = [
+        reader.prepare_reader(filename_queue) for _ in range(num_readers)
+    ]
 
-  def __init__(self,
-               width=1918,
-               height=1280,
-               channels=3):
-    """Construct a CarvanaFeatureReader.
-
-    Args:
-      num_classes: a positive integer for the number of classes.
-      feature_sizes: positive integer(s) for the feature dimensions as a list.
-      feature_names: the feature name(s) in the tensorflow record as a list.
-    """
-    self.width = width
-    self.height = height
-    self.channels = channels
-
-  def prepare_reader(self, filename_queue, batch_size=16):
-    """Creates a single reader thread for .
-
-    Args:
-      filename_queue: A tensorflow queue of filename locations.
-
-    Returns:
-      A tuple of video indexes, features, labels, and padding data.
-    """
-    reader = tf.TFRecordReader()
-    _, serialized_examples = reader.read(filename_queue)
-
-    feature_map = {"id": tf.FixedLenFeature([], tf.string),
-                   "image": tf.FixedLenFeature([], tf.string)}
-
-    features = tf.parse_single_example(serialized_examples, features=feature_map)
-    print >> sys.stderr, " features", features
-
-    image_id = features["id"]
-    image_data = features["image"]
-    print >> sys.stderr, " image_id", image_id
-    print >> sys.stderr, " image_data", image_data
-
-    # reshape to rank1
-    image_id = tf.reshape(image_id, shape=[1])
-
-    # [height, width, channels]
-    image_data = tf.image.decode_jpeg(image_data, channels=3)
-    # image_data.set_shape(self.height * self.width * self.channels)
-    image_data = tf.reshape(image_data, shape=[1, self.height, self.width, self.channels])
-    print >> sys.stderr, " image_data", image_data
-
-    return image_id, image_data
-
+    return tf.train.shuffle_batch_join(
+        training_data,
+        batch_size=batch_size,
+        capacity=batch_size * 8,
+        min_after_dequeue=batch_size,
+        allow_smaller_final_batch=False,
+        enqueue_many=True)

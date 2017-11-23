@@ -4,7 +4,7 @@
 # the script directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# output directories
+# input directories
 VOCAB_FILE="${DIR}/../data/word_counts.txt"
 
 # input directories
