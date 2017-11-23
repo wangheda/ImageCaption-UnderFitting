@@ -108,8 +108,8 @@ class SelfCriticalLoss(BaseLoss):
                                       target_caption_words,
                                       target_caption_lengths)
 
-    tf.summary.histogram("losses/average_greedy_score", tf.reduce_mean(greedy_score))
-    tf.summary.histogram("losses/average_sample_score", tf.reduce_mean(sample_score))
+    tf.summary.scalar("losses/greedy_score", tf.reduce_mean(greedy_score))
+    tf.summary.scalar("losses/sample_score", tf.reduce_mean(sample_score))
     tf.summary.histogram("losses/greedy_score", greedy_score)
     tf.summary.histogram("losses/sample_score", sample_score)
     tf.summary.histogram("losses/greedy_caption_lengths", greedy_caption_lengths)
