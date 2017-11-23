@@ -30,6 +30,7 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
         --output=${OUTPUT_DIR}/part-${prefix}.json \
         --model=${model} \
         --support_ingraph=True \
+        --inception_return_tuple=True \
         --gpu_memory_fraction=$gpu_fraction"
     fi
   done | parallel -j $num_processes
