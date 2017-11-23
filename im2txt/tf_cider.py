@@ -61,6 +61,8 @@ class CiderScorer(object):
 
     hyp_words = tf.cast(hyp_words, dtype=tf.int64)
     ref_words = tf.cast(ref_words, dtype=tf.int64)
+    hyp_lengths = tf.cast(hyp_lengths, dtype=tf.int64)
+    ref_lengths = tf.cast(ref_lengths, dtype=tf.int64)
 
     if get_rank(hyp_words) == 2:
       hyp_words = tf.expand_dims(hyp_words, axis=1)

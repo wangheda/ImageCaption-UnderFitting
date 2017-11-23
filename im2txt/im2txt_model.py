@@ -27,6 +27,7 @@ import tensorflow as tf
 import im2txt_models
 
 import losses
+import readers
 from train_utils import image_embedding
 from train_utils import image_processing
 from train_utils.inputs import get_attributes_target, get_images_and_captions, caption_to_multi_labels
@@ -70,6 +71,8 @@ tf.flags.DEFINE_integer("num_preprocess_threads", 4,
 tf.flags.DEFINE_integer("image_height", 299,
                         "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_integer("image_width", 299,
+                        "Dimensions of Inception v3 input images.")
+tf.flags.DEFINE_integer("image_channel", 3,
                         "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_float("initializer_scale", 0.08,
                         "Scale used to initialize model variables.")
@@ -214,12 +217,35 @@ class Im2TxtModel(object):
         input_mask = None
       else:
         images, input_seqs, target_seqs, input_mask = get_images_and_captions(is_training=self.is_training)
+    elif FLAGS.reader == "ImageCaptionReader":
+      reader = readers.ImageCaptionReader(num_refs=FLAGS.num_refs,
+                                  max_ref_length=FLAGS.max_ref_length)
+      cols = readers.get_input_data_tensors(reader,
+                                    data_pattern=FLAGS.input_file_pattern,
+                                    batch_size=FLAGS.batch_size,
+                                    num_epochs=None,
+                                    is_training=True,
+                                    num_readers=4)
+      if FLAGS.multiple_references:
+        images, ref_words, ref_lengths = cols
+        if FLAGS.rl_training:
+          input_seqs = ref_words
+          target_seqs = ref_words
+          input_mask = tf.reshape(tf.sequence_mask(tf.reshape(ref_lengths, [-1]), 
+                                                   maxlen=FLAGS.max_ref_length), 
+                                  [FLAGS.batch_size, FLAGS.num_refs, FLAGS.max_ref_length])
+          self.target_lengths = ref_lengths
+        else:
+          input_seqs = ref_words
+          target_seqs = tf.concat([input_seqs[:,1:], tf.zeros([FLAGS.batch_size,1], dtype=tf.int64)], axis=1)
+          input_mask = tf.sequence_mask(ref_lengths-1, maxlen=FLAGS.max_ref_length)
+      else:
+        images, input_seqs, target_seqs, input_mask = cols
 
       self.images = images
       self.input_seqs = input_seqs
       self.input_mask = input_mask
       self.target_seqs = target_seqs
-      self.target_lengths = tf.reduce_sum(input_mask, -1)
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
