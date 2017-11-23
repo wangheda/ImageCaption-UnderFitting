@@ -265,7 +265,7 @@ def get_images_and_captions(is_training):
           flip_caption_feature=FLAGS.flip_caption_feature_name)
       # random decides flip or not
       flip_image = simple_process_image(encoded_image, thread_id=thread_id, flip=True, is_training=is_training)
-      image = self.process_image(encoded_image, thread_id=thread_id, flip=False, is_training=is_training)
+      image = simple_process_image(encoded_image, thread_id=thread_id, flip=False, is_training=is_training)
       maybe_flip_image, maybe_flip_caption = tf.cond(
                           tf.less(tf.random_uniform([],0,1.0), 0.5), 
                           lambda: [flip_image, flip_caption], 
