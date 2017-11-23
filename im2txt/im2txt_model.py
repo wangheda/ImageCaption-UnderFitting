@@ -28,7 +28,7 @@ import im2txt_models
 
 import losses
 from train_utils import image_embedding
-from train_utils import image_processing
+from train_utils.image_processing import simple_process_image
 from train_utils.inputs import get_attributes_target, get_images_and_captions, caption_to_multi_labels
 
 tf.flags.DEFINE_string("model", "ShowAndTellModel",
@@ -219,7 +219,10 @@ class Im2TxtModel(object):
       self.input_seqs = input_seqs
       self.input_mask = input_mask
       self.target_seqs = target_seqs
-      self.target_lengths = tf.reduce_sum(input_mask, -1)
+      if self.mode == "inference":
+        self.target_lengths = None
+      else:
+        self.target_lengths = tf.reduce_sum(input_mask, -1)
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
