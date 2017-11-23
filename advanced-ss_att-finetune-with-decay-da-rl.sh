@@ -38,6 +38,6 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --num_examples_per_epoch=210000 \
   --train_inception_with_decay=False \
   --number_of_steps=900000 \
-  --rl_train=True \
+  --rl_training=True \
   --document_frequency_file="${DOCUMENT_FREQUENCY_FILE}"
 
