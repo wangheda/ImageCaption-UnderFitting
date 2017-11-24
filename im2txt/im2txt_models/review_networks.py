@@ -106,7 +106,7 @@ class ReviewnetworkModel(object):
                                             name="state_feed")
                 state_tuple = tf.split(value=state_feed, num_or_size_splits=2, axis=1)
 
-                x_t = tf.squeeze(seq_embeddings, axis=[1])
+                x_t = tf.squeeze(    , axis=[1])
 
                 context_encode = self.context_encode + \
                                  tf.expand_dims(tf.matmul(state_tuple[1], self.hidden_att_W), 1) + \

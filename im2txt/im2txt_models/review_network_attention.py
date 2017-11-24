@@ -1,12 +1,11 @@
 import tensorflow as tf
 import math
-from tensorflow.python.layers.core import Dense
 
 FLAGS = tf.app.flags.FLAGS
 import numpy as np
 
 
-class ReviewNetworkModelInGraph(object):
+class ReviewNetworkAttentionModel(object):
     def init_weight(self, dim_in, dim_out, name=None, stddev=1.0):
         return tf.Variable(tf.truncated_normal([dim_in, dim_out], stddev=stddev / math.sqrt(float(dim_in))), name=name)
 
@@ -64,6 +63,7 @@ class ReviewNetworkModelInGraph(object):
             '''
             embedding_map = tf.Variable(
                 self.init_embedding(FLAGS.vocab_size, FLAGS.embedding_size),
+                trainable=False,
                 dtype=tf.float32,
                 name="map")
             seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
@@ -105,8 +105,7 @@ class ReviewNetworkModelInGraph(object):
                                             name="state_feed")
                 state_tuple = tf.split(value=state_feed, num_or_size_splits=2, axis=1)
 
-                seq_embeddings = tf.squeeze(seq_embeddings, axis=[1])
-                x_t = seq_embeddings
+                x_t = tf.squeeze(seq_embeddings, axis=[1])
 
                 context_encode = self.context_encode + \
                                  tf.expand_dims(tf.matmul(state_tuple[1], self.hidden_att_W), 1) + \
@@ -129,7 +128,6 @@ class ReviewNetworkModelInGraph(object):
                 )
                 tf.concat(axis=1, values=state_tuple, name='state')
 
-                #logits_final = tf.expand_dims(lstm_outputs,axis=0)
                 logits_final = lstm_outputs
 
             else:
@@ -169,91 +167,56 @@ class ReviewNetworkModelInGraph(object):
         #print(seq_embeddings.get_shape().as_list())
         #print(logits_final.get_shape().as_list())
         with tf.variable_scope("lstm_review",initializer=initializer) as lstm_review_scope:
-            if mode == 'inference':
-                self.image = tf.contrib.seq2seq.tile_batch(self.image,multiplier=FLAGS.beam_width)
-
-            lstm_review = tf.contrib.rnn.BasicLSTMCell(
-                num_units=FLAGS.num_lstm_units, state_is_tuple=True
+            lstm_review = tf.contrib.rnn.LSTMCell(
+                num_units=self.dim_embed+self.dim_hidden, state_is_tuple=True
             )
-            image_embeddings = tf.matmul(tf.reduce_sum(image_model_output, 1), self.image_decode_W)
-            if mode == "train":
-                lstm_review = tf.contrib.rnn.DropoutWrapper(
-                    lstm_review,
-                    input_keep_prob=FLAGS.lstm_dropout_keep_prob,
-                    output_keep_prob=FLAGS.lstm_dropout_keep_prob
-                )
             attention_mechanism = getattr(tf.contrib.seq2seq,
                                           FLAGS.attention_mechanism)(
                 num_units = FLAGS.num_attention_depth,
-                memory = self.image)
-
-            lstm_review = tf.contrib.seq2seq.AttentionWrapper(
+                memory = self.image
+            )
+            lstm_review = tf.contrib.seq2sew.AttentionWrapper(
                 lstm_review,
                 attention_mechanism,
                 attention_layer_size=FLAGS.num_attention_depth,
                 output_attention=FLAGS.output_attention
             )
+            zero_state = lstm_review.zero_state(self.batch_size, dtype=tf.float32)
 
-            if mode == 'train':
-                zero_state = lstm_review.zero_state(self.batch_size,dtype=tf.float32)
-                _, initial_state = lstm_review(image_embeddings, zero_state)
+            _, initial_state = lstm_review(tf.matmul(tf.reduce_sum(image_model_output,1),self.image_decode_W), zero_state)
 
-            elif mode == "inference":
+            lstm_review_scope.reuse_variables()
 
-                image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings,multiplier=FLAGS.beam_width)
-                zero_state = lstm_review.zero_state(batch_size=self.batch_size*FLAGS.beam_width,dtype=tf.float32)
-                _, initial_state = lstm_review(image_embeddings,zero_state)
-                seq_embeddings = tf.contrib.seq2seq.tile_batch(seq_embeddings,multiplier=FLAGS.beam_width)
-                logits_final = tf.contrib.seq2seq.tile_batch(logits_final,multiplier=FLAGS.beam_width)
+            if mode == "inference":
+                tf.concat(axis=1, values=initial_state, name="initial_state_review")
+                state_review_feed = tf.placeholder(dtype=tf.float32,
+                                                   shape=[None, sum(lstm_review.state_size)],
+                                                   name='state_review_feed')
+                state_review_tuple = tf.split(value=state_review_feed, num_or_size_splits=2, axis=1)
+
+                lstm_outputs, state_review_tuple = lstm_review(
+                    inputs=tf.concat(axis=-1, values=[tf.squeeze(seq_embeddings,axis=[1]),logits_final]),
+                    state=state_review_tuple
+                )
+                tf.concat(axis=1, values=state_review_tuple, name="state_review")
             else:
-                raise Exception("unknown mode!")
-
-            output_layer = Dense(units=FLAGS.vocab_size,
-                                 name="output_layer")
-
-            if mode == "train":
                 sequence_length = tf.reduce_sum(input_mask, 1)
-                helper = tf.contrib.seq2seq.TrainingHelper(
-                    inputs=tf.concat(axis=-1, values=[seq_embeddings,logits_final]),
-                    sequence_length=sequence_length
-                )
-                decoder = tf.contrib.seq2seq.BasicDecoder(
-                    cell=lstm_review,
-                    helper=helper,
-                    initial_state=initial_state,
-                    output_layer=output_layer
-                )
-            elif mode == "inference":
-                decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-                    cell=lstm_review,
-                    embedding=embedding_map,
-                    start_tokens=tf.fill([self.batch_size],FLAGS.start_token),
-                    end_token=FLAGS.end_token,
-                    initial_state=initial_state,
-                    beam_width=FLAGS.beam_width,
-                    length_penalty_weight=0.0
-                )
-                #inputs = tf.concat(axis=-1, values=[seq_embeddings,logits_final])
-                #print(inputs.get_shape().as_list())
-                #print(initial_state.get_shape().as_list())
-                #output_, state_, input_, finished_, = decoder.step(0, inputs=inputs,state=initial_state)
-                #print(input_.get_shape().as_list())
-            else:
-                raise Exception("unknown mode!")
+                lstm_outputs, _ = tf.nn.dynamic_rnn(cell=lstm_review,
+                                                    inputs=tf.concat(axis=-1, values=[seq_embeddings,logits_final]),
+                                                    sequence_length=sequence_length,
+                                                    initial_state=initial_state,
+                                                    dtype=tf.float32,
+                                                    scope=lstm_review_scope)
+        lstm_outputs = tf.reshape(lstm_outputs,[-1, lstm_review.output_size])
 
-            maximum_iterations = None if mode == 'train' else FLAGS.max_caption_length
-            outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(
-                decoder=decoder,
-                output_time_major=False,
-                impute_finished=False,
-                maximum_iterations=maximum_iterations
+        with tf.variable_scope("logits") as logits_scope:
+            logits = tf.contrib.layers.fully_connected(
+                inputs=lstm_outputs,
+                num_outputs=FLAGS.vocab_size,
+                activation_fn=None,
+                weights_initializer=initializer,
+                scope=logits_scope
             )
-            if mode == 'train':
-                logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
-                return {'logits': logits}
-            else:
-                return {'bs_results':outputs}
 
-
-
+        return {"logits": logits}
 
