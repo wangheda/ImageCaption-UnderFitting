@@ -98,6 +98,8 @@ tf.flags.DEFINE_string("vocab_file", "",
 # reinforcement learning config
 tf.flags.DEFINE_boolean("rl_training", False,
                         "Train with reinforcement learning.")
+tf.flags.DEFINE_boolean("rl_training_along_with_mle", False,
+                        "Train with reinforcement learning with the mle (need to use it along with rl_training).")
 tf.flags.DEFINE_string("rl_training_loss", "SelfCriticalLoss",
                         "Type of loss in reinforcement learning.")
 tf.flags.DEFINE_integer("max_ref_length", 30, "Max reference length.")
@@ -324,17 +326,30 @@ class Im2TxtModel(object):
       if "top_n_attributes" in outputs:
         self.top_n_attributes = outputs["top_n_attributes"]
     else:
+      if "mle_caption_logits" in outputs:
+        logits = tf.reshape(outputs["mle_caption_logits"], [-1, FLAGS.vocab_size])
+        targets = tf.reshape(self.target_seqs, [-1])
+        weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+
+        # Compute losses.
+        mle_loss_fn = losses.SparseSoftmaxCrossEntropyLoss()
+        mle_loss = mle_loss_fn.calculate_loss(logits, targets, weights)
+
+        # Logging losses.
+        tf.summary.scalar("losses/mle_loss", mle_loss)
+        tf.losses.add_loss(mle_loss)
+
       # caption loss
       if FLAGS.rl_training == True:
         # rl loss
         # load greed caption and sample caption to calculate reward
         target_caption_words = self.target_seqs
         target_caption_lengths = self.target_lengths
-        greedy_caption_words = outputs["greedy_results"].sample_id
-        greedy_caption_lengths = outputs["greedy_results_sequence_lengths"]
-        sample_caption_logits = outputs["sample_results"].rnn_output
-        sample_caption_words = outputs["sample_results"].sample_id
-        sample_caption_lengths = outputs["sample_results_sequence_lengths"]
+        greedy_caption_words = outputs["greedy_caption_words"]
+        greedy_caption_lengths = outputs["greedy_caption_lengths"]
+        sample_caption_logits = outputs["sample_caption_logits"]
+        sample_caption_words = outputs["sample_caption_words"]
+        sample_caption_lengths = outputs["sample_caption_lengths"]
 
         if get_rank(target_caption_words) == 2:
           target_caption_words = tf.expand_dims(target_caption_words, 1)
@@ -373,22 +388,22 @@ class Im2TxtModel(object):
         tf.losses.add_loss(rl_loss)
 
       else:
-        # prepare logits, targets and weight
-        logits = outputs["logits"]
-        targets = tf.reshape(self.target_seqs, [-1])
-        weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+        if "logits" in outputs:
+          # prepare logits, targets and weight
+          logits = outputs["logits"]
+          targets = tf.reshape(self.target_seqs, [-1])
+          weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
 
-        # Compute losses.
-        loss_fn = losses.SparseSoftmaxCrossEntropyLoss()
-        batch_loss = loss_fn.calculate_loss(logits, targets, weights)
+          # Compute losses.
+          loss_fn = losses.SparseSoftmaxCrossEntropyLoss()
+          batch_loss = loss_fn.calculate_loss(logits, targets, weights)
 
-        # Logging losses.
-        tf.summary.scalar("losses/batch_loss", batch_loss)
-        tf.losses.add_loss(batch_loss)
+          # Logging losses.
+          tf.summary.scalar("losses/batch_loss", batch_loss)
+          tf.losses.add_loss(batch_loss)
 
-        self.target_cross_entropy_losses = batch_loss # Used in evaluation.
-        self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
-        
+          self.target_cross_entropy_losses = batch_loss # Used in evaluation.
+          self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
 
         # multi-label-loss
         if "attributes_logits" in outputs and "attributes_mask" in outputs:
@@ -428,7 +443,6 @@ class Im2TxtModel(object):
           tf.summary.scalar("losses/word_loss", word_loss)
           tf.losses.add_loss(word_loss)
           self.word_loss = word_loss
-
 
       total_loss = tf.losses.get_total_loss()
 

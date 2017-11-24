@@ -98,3 +98,4 @@ from semantic_attention_model import SemanticAttentionModel
 from show_and_tell_advanced_model import ShowAndTellAdvancedModel
 from show_attend_tell_model import ShowAttendTellModel
 from review_network_model import ReviewNetworkModel
+from multi_ref_model import MultiRefModel
