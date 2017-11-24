@@ -35,6 +35,21 @@ def get_shape(tensor):
           for s in zip(static_shape, dynamic_shape)]
   return dims
 
+def get_seq_length1d(t):
+  return tf.reduce_min(tf.where(tf.equal(t, FLAGS.end_token)))
+
+def get_seq_length2d(t):
+  return tf.map_fn(get_seq_length1d, t, dtype=tf.int64)
+
+def get_seq_length3d(t):
+  return tf.map_fn(get_seq_length2d, t, dtype=tf.int64)
+
+def pad_end_token(t):
+  # t should be rank 3
+  batch, num_refs, _ = t.shape.as_list()
+  return tf.concat([t, tf.constant(FLAGS.end_token, dtype=tf.int64, shape=[batch, num_refs, 1])], axis=-1)
+
+
 class CiderScorer(object):
   def __init__(self):
     with open(FLAGS.document_frequency_file, 'r') as f:
@@ -68,6 +83,9 @@ class CiderScorer(object):
     if get_rank(ref_words) == 2:
       ref_words = tf.expand_dims(ref_words, axis=1)
       ref_lengths = tf.expand_dims(ref_lengths, axis=1)
+
+    hyp_lengths = get_seq_length3d(pad_end_token(hyp_words))
+    ref_lengths = get_seq_length3d(pad_end_token(ref_words))
 
     log_tensor("hyp_words", l=locals())
     log_tensor("hyp_lengths", l=locals())
