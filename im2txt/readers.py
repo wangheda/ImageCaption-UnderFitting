@@ -99,7 +99,13 @@ class ImageCaptionReader(BaseReader):
                              shape=[1, self.num_refs])
 
     if FLAGS.multiple_references:
-      return image, ref_words, ref_lengths
+      input_seqs = ref_words
+      target_seqs = tf.concat([input_seqs[:,:,1:], tf.zeros([1,self.num_refs,1], dtype=tf.int64)], axis=-1)
+      input_mask = tf.reshape(tf.sequence_mask(tf.reshape(ref_lengths, [-1]), 
+                                               maxlen=self.max_ref_length), 
+                              [1, self.num_refs, self.max_ref_length])
+      target_lengths = tf.maximum(ref_lengths - 1, 0)
+      return image, input_seqs, target_seqs, input_mask, target_lengths
     else:
       images = tf.tile(image, multiples=[self.num_refs,1,1])
       input_seqs = tf.reshape(ref_words, 
