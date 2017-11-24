@@ -9,7 +9,7 @@ MODEL_DIR="${DIR}/model"
 DOCUMENT_FREQUENCY_FILE="${DIR}/data/document_frequency.json"
 
 model=ShowAndTellAdvancedModel
-model_dir_name=show_and_tell_advanced_model_visual_attention_rl_adam_lr1e-3_decay
+model_dir_name=show_and_tell_advanced_model_visual_attention_rl_adam_lr1e-4_decay
 original_model_dir_name=show_and_tell_advanced_model_attention_finetune_with_decay_da
 start_ckpt=640713
 
