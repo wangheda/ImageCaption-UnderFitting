@@ -25,7 +25,7 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
       --input_file_pattern="${VALIDATE_IMAGE_DIR}/${prefix}*.jpg" \
       --checkpoint_path=${CHECKPOINT_PATH} \
       --vocab_file=${DIR}/data/word_counts.txt \
-      --output=${OUTPUT_DIR}/part-${prefix}.json \
+      --output=${OUTPUT_DIR}/out.json \
       --model=${model} \
       --inception_return_tuple=True \
       --use_attention_wrapper=True \

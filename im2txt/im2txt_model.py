@@ -231,25 +231,16 @@ class Im2TxtModel(object):
                                     is_training=True,
                                     num_readers=4)
       if FLAGS.multiple_references:
-        images, ref_words, ref_lengths = cols
-        if FLAGS.rl_training:
-          input_seqs = ref_words
-          target_seqs = ref_words
-          input_mask = tf.reshape(tf.sequence_mask(tf.reshape(ref_lengths, [-1]), 
-                                                   maxlen=FLAGS.max_ref_length), 
-                                  [FLAGS.batch_size, FLAGS.num_refs, FLAGS.max_ref_length])
-          self.target_lengths = ref_lengths
-        else:
-          input_seqs = ref_words
-          target_seqs = tf.concat([input_seqs[:,1:], tf.zeros([FLAGS.batch_size,1], dtype=tf.int64)], axis=1)
-          input_mask = tf.sequence_mask(ref_lengths-1, maxlen=FLAGS.max_ref_length)
+        images, input_seqs, target_seqs, input_mask, target_lengths = cols
+        self.target_lengths = target_lengths
       else:
         images, input_seqs, target_seqs, input_mask = cols
+        self.target_lengths = tf.reduce_sum(input_mask, -1)
 
     self.images = images
     self.input_seqs = input_seqs
-    self.input_mask = input_mask
     self.target_seqs = target_seqs
+    self.input_mask = input_mask
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
