@@ -35,6 +35,20 @@ def get_shape(tensor):
           for s in zip(static_shape, dynamic_shape)]
   return dims
 
+def get_real_lengths(words, lengths):
+  # t should be rank 3
+  batch, num_refs, max_length = words.get_shape().as_list()
+  mask = tf.reshape(tf.sequence_mask(tf.reshape(lengths, [-1]), 
+                                     maxlen=max_length),
+                    shape=[batch, num_refs, max_length])
+  num_end_tokens = tf.reduce_sum(tf.cast(tf.logical_and(tf.equal(words, FLAGS.end_token), 
+                                                        mask), 
+                                         dtype=tf.int64), 
+                                 axis=-1)
+  lengths = tf.maximum(lengths - num_end_tokens, 0)
+  return lengths
+
+
 class CiderScorer(object):
   def __init__(self):
     with open(FLAGS.document_frequency_file, 'r') as f:
@@ -61,6 +75,8 @@ class CiderScorer(object):
 
     hyp_words = tf.cast(hyp_words, dtype=tf.int64)
     ref_words = tf.cast(ref_words, dtype=tf.int64)
+    hyp_lengths = tf.cast(hyp_lengths, dtype=tf.int64)
+    ref_lengths = tf.cast(ref_lengths, dtype=tf.int64)
 
     if get_rank(hyp_words) == 2:
       hyp_words = tf.expand_dims(hyp_words, axis=1)
@@ -68,6 +84,9 @@ class CiderScorer(object):
     if get_rank(ref_words) == 2:
       ref_words = tf.expand_dims(ref_words, axis=1)
       ref_lengths = tf.expand_dims(ref_lengths, axis=1)
+
+    hyp_lengths = get_real_lengths(hyp_words, hyp_lengths)
+    ref_lengths = get_real_lengths(ref_words, ref_lengths)
 
     log_tensor("hyp_words", l=locals())
     log_tensor("hyp_lengths", l=locals())

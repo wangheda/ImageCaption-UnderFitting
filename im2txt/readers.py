@@ -23,12 +23,12 @@ import utils
 import tensorflow as tf
 from tensorflow import logging
 from tensorflow import flags
+from tensorflow import gfile
+from train_utils.image_processing import simple_process_image
 
 FLAGS = flags.FLAGS
-tf.flags.DEFINE_integer("reader_num_refs", 5,
+tf.flags.DEFINE_integer("num_refs", 5,
                         "Number of caption lines for each of the images.")
-tf.flags.DEFINE_integer("reader_max_ref_length", 30,
-                        "The maximum length of caption for each of the images.")
 
 
 class BaseReader(object):
@@ -55,10 +55,11 @@ class ImageCaptionReader(BaseReader):
 
     num_words = self.num_refs * self.max_ref_length
     feature_map = {
-        "image/id": tf.FixedLenFeature([], tf.string),
+        "image/id": tf.FixedLenFeature([], tf.int64),
         "image/data": tf.FixedLenFeature([], tf.string),
         "image/ref_lengths": tf.FixedLenFeature([self.num_refs], tf.int64),
         "image/ref_words": tf.FixedLenFeature([num_words], tf.int64),
+        "image/flipped_ref_lengths": tf.FixedLenFeature([self.num_refs], tf.int64),
         "image/flipped_ref_words": tf.FixedLenFeature([num_words], tf.int64),
       }
 
@@ -67,7 +68,7 @@ class ImageCaptionReader(BaseReader):
 
     # [1]
     image_id = features["image/id"] 
-    print(" image_id", image_ids)
+    print(" image_id", image_id)
 
     # [height, width, channels]
     encoded_image = features["image/data"]
@@ -78,24 +79,33 @@ class ImageCaptionReader(BaseReader):
                                  flip=True,
                                  is_training=self.is_training)
     ref_words = features["image/ref_words"]
+    ref_lengths = features["image/ref_lengths"]
     flipped_ref_words = features["image/flipped_ref_words"]
-    maybe_flipped_image, maybe_flipped_captions = tf.cond(
+    flipped_ref_lengths = features["image/flipped_ref_lengths"]
+
+    maybe_flipped_image, maybe_flipped_captions, maybe_flipped_ref_lengths = tf.cond(
                         tf.less(tf.random_uniform([],0,1.0), 0.5), 
-                        lambda: [flipped_image, flipped_ref_words], 
-                        lambda: [image, ref_words])
-    print(" image", images)
+                        lambda: [flipped_image, flipped_ref_words, flipped_ref_lengths], 
+                        lambda: [image, ref_words, ref_lengths])
+    print(" image", image)
 
     image_id = tf.reshape(image_id,
                           shape=[1])
     image = tf.reshape(maybe_flipped_image, 
-                       shape=[1, FLAGS.image_height, FLAGS.image_width])
+                       shape=[1, FLAGS.image_height, FLAGS.image_width, FLAGS.image_channel])
     ref_words = tf.reshape(maybe_flipped_captions,
-                              shape=[1, self.num_refs, self.max_ref_length])
-    ref_lengths = tf.reshape(features["image/ref_lengths"], 
+                           shape=[1, self.num_refs, self.max_ref_length])
+    ref_lengths = tf.reshape(maybe_flipped_ref_lengths,
                              shape=[1, self.num_refs])
 
     if FLAGS.multiple_references:
-      return image, ref_words, ref_lengths
+      input_seqs = ref_words
+      target_seqs = tf.concat([input_seqs[:,:,1:], tf.zeros([1,self.num_refs,1], dtype=tf.int64)], axis=-1)
+      input_mask = tf.reshape(tf.sequence_mask(tf.reshape(ref_lengths, [-1]), 
+                                               maxlen=self.max_ref_length), 
+                              [1, self.num_refs, self.max_ref_length])
+      target_lengths = tf.maximum(ref_lengths - 1, 0)
+      return image, input_seqs, target_seqs, input_mask, target_lengths
     else:
       images = tf.tile(image, multiples=[self.num_refs,1,1])
       input_seqs = tf.reshape(ref_words, 
@@ -108,7 +118,8 @@ class ImageCaptionReader(BaseReader):
       return images, input_seqs, target_seqs, input_mask
 
 
-def get_input_data_tensors(data_pattern=None,
+def get_input_data_tensors(reader,
+                           data_pattern=None,
                            batch_size=16,
                            num_epochs=None,
                            is_training=True,

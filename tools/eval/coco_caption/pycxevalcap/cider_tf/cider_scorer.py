@@ -20,6 +20,35 @@ tf.flags.DEFINE_string("vocab_file", "resources/word_counts.txt",
                        "Vocabulary file.")
 tf.flags.DEFINE_integer("max_vocab_size", 10000,
                        "Don't change this.")
+tf.flags.DEFINE_integer("end_token", 2,
+                       "Don't change this.")
+
+def get_rank(tensor):
+  return len(get_shape_as_list(tensor))
+
+def get_shape_as_list(tensor):
+  return tensor.get_shape().as_list()
+
+def get_shape(tensor):
+  """Returns static shape if available and dynamic shape otherwise."""
+  static_shape = tensor.shape.as_list()
+  dynamic_shape = tf.unstack(tf.shape(tensor))
+  dims = [s[1] if s[0] is None else s[0]
+          for s in zip(static_shape, dynamic_shape)]
+  return dims
+
+def get_real_lengths(words, lengths):
+  # t should be rank 3
+  batch, num_refs, max_length = words.get_shape().as_list()
+  mask = tf.reshape(tf.sequence_mask(tf.reshape(lengths, [-1]), 
+                                     maxlen=max_length),
+                    shape=[batch, num_refs, max_length])
+  num_end_tokens = tf.reduce_sum(tf.cast(tf.logical_and(tf.equal(words, FLAGS.end_token), 
+                                                        mask), 
+                                         dtype=tf.int64), 
+                                 axis=-1)
+  lengths = tf.maximum(lengths - num_end_tokens, 0)
+  return lengths
 
 class CiderScorer(object):
   """
@@ -152,14 +181,27 @@ class CiderScorer(object):
         score:       [batch]
         """
 
+        hyp_words = tf.cast(hyp_words, dtype=tf.int64)
+        ref_words = tf.cast(ref_words, dtype=tf.int64)
+
+        if get_rank(hyp_words) == 2:
+          hyp_words = tf.expand_dims(hyp_words, axis=1)
+          hyp_lengths = tf.expand_dims(hyp_lengths, axis=1)
+        if get_rank(ref_words) == 2:
+          ref_words = tf.expand_dims(ref_words, axis=1)
+          ref_lengths = tf.expand_dims(ref_lengths, axis=1)
+
+        hyp_lengths = get_real_lengths(hyp_words, hyp_lengths)
+        ref_lengths = get_real_lengths(ref_words, ref_lengths)
+
+        log_tensor("hyp_words", l=locals())
+        log_tensor("hyp_lengths", l=locals())
+        log_tensor("ref_words", l=locals())
+        log_tensor("ref_lengths", l=locals())
+
         def ngram_count(words, lengths, n=4):
           shape = words.get_shape().as_list()
-          if len(shape) == 2:
-            num_sents = 1
-            batch, max_length = shape
-            words = tf.reshape(words, [batch, num_sents, max_length])
-            lengths = tf.reshape(lengths, [batch, num_sents])
-          elif len(shape) == 3:
+          if len(shape) == 3:
             batch, num_sents, max_length = shape
           else:
             raise NotImplementedError("tensor must be of rank 2 or 3")
