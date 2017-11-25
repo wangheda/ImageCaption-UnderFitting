@@ -112,6 +112,8 @@ class MultiRefModel(object):
     else:
       if FLAGS.inception_return_tuple:
         image_model_output, middle_layer = image_model_output
+        if FLAGS.l2_normalize_image:
+          middle_layer = tf.nn.l2_normalize(middle_layer, dim=-1)
       else:
         image_model_output = image_model_output
 
@@ -133,6 +135,9 @@ class MultiRefModel(object):
           weights_initializer=initializer,
           biases_initializer=None,
           scope=scope)
+      if FLAGS.l2_normalize_image:
+        print "l2_normalize image"
+        image_embeddings = tf.nn.l2_normalize(image_embeddings, dim=-1)
 
     # Save the embedding size in the graph.
     tf.constant(FLAGS.embedding_size, name="embedding_size")
@@ -282,6 +287,7 @@ class MultiRefModel(object):
               decoder=mle_decoder,
               output_time_major=False,
               impute_finished=False,
+              swap_memory=FLAGS.swap_memory,
               maximum_iterations=maximum_iterations)
             return mle_outputs.rnn_output, mle_outputs_lengths
 

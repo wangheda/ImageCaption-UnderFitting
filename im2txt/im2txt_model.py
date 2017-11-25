@@ -104,6 +104,9 @@ tf.flags.DEFINE_string("rl_training_loss", "SelfCriticalLoss",
                         "Type of loss in reinforcement learning.")
 tf.flags.DEFINE_integer("max_ref_length", 30, "Max reference length.")
 
+# image config
+tf.flags.DEFINE_boolean("l2_normalize_image", False,
+                        "Normalize image.")
 
 FLAGS = tf.app.flags.FLAGS
 

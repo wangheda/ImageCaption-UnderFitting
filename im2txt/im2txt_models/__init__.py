@@ -90,6 +90,8 @@ tf.flags.DEFINE_float("discriminative_loss_weights", 1.0,
                       "The weight of discriminative loss.")
 
 
+tf.flags.DEFINE_boolean("swap_memory", False,
+                        "Whether to use swap memory option.")
 
 # models
 from show_and_tell_model import ShowAndTellModel

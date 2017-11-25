@@ -26,9 +26,10 @@ if [ $command == "cmd:train" ]; then
     --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
     --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
     --model=${model} \
+    --l2_normalize_image=True \
     --vocab_size=10000 \
     --train_dir="${SUB_MODEL_DIR}" \
-    --initial_learning_rate=0.8 \
+    --initial_learning_rate=2.0 \
     --learning_rate_decay_factor=0.77 \
     --num_epochs_per_decay=1.0 \
     --inception_return_tuple=True \
@@ -57,6 +58,7 @@ if [ $command == "cmd:finetune" ]; then
     --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
     --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
     --model=${model} \
+    --l2_normalize_image=True \
     --vocab_size=10000 \
     --train_dir="${SUB_MODEL_DIR}" \
     --initial_learning_rate=0.8 \
@@ -69,6 +71,7 @@ if [ $command == "cmd:finetune" ]; then
     --num_lstm_layers=1 \
     --train_inception_with_decay=True \
     --number_of_steps=$STEPS \
+    --swap_memory=True \
     --reader=ImageCaptionReader \
     --multiple_references=True
 fi
@@ -88,9 +91,12 @@ if [ $command == "cmd:rl_finetune" ]; then
   CUDA_VISIBLE_DEVICES=$device python train.py \
     --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
     --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
-    --train_dir="${MODEL_DIR}/${model_dir_name}" \
+    --train_dir="${SUB_MODEL_DIR}" \
     --model=${model} \
+    --l2_normalize_image=True \
     --vocab_size=10000 \
+    --save_interval_secs=300 \
+    --keep_checkpoint_every_n_hours=0.166 \
     --initial_learning_rate=0.8 \
     --learning_rate_decay_factor=0.77 \
     --num_epochs_per_decay=1.0 \
