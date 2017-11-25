@@ -5,7 +5,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 command="cmd:$1"
 
-device=1
+device=0
 model=ShowAndTellAdvancedModel
 model_dir_name=localization_attention_model
 
@@ -25,7 +25,7 @@ if [ $command == "cmd:train" ]; then
   CUDA_VISIBLE_DEVICES=$device python train.py \
     --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
     --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
-    --train_dir="${MODEL_DIR}/${model_dir_name}" \
+    --train_dir="${SUB_MODEL_DIR}" \
     --model=${model} \
     --localization_attention=True \
     --initial_learning_rate=1.0 \
@@ -53,7 +53,7 @@ if [ $command == "cmd:finetune" ]; then
     echo "model_checkpoint_path: \"${PREV_SUB_MODEL_DIR}/model.ckpt-${PREV_STEPS}\"" > ${SUB_MODEL_DIR}/checkpoint
   fi
 
-  CUDA_VISIBLE_DEVICES=0 python train.py \
+  CUDA_VISIBLE_DEVICES=$device python train.py \
     --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
     --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
     --train_dir="${SUB_MODEL_DIR}" \
@@ -85,7 +85,7 @@ if [ $command == "cmd:rl_finetune" ]; then
     echo "model_checkpoint_path: \"${PREV_SUB_MODEL_DIR}/model.ckpt-${PREV_STEPS}\"" > ${SUB_MODEL_DIR}/checkpoint
   fi
 
-  CUDA_VISIBLE_DEVICES=0 python train.py \
+  CUDA_VISIBLE_DEVICES=$device python train.py \
     --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
     --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
     --train_dir="${SUB_MODEL_DIR}" \
@@ -111,7 +111,7 @@ PREV_SUB_MODEL_DIR=$SUB_MODEL_DIR
 PREV_STEPS=$STEPS
 
 if [ $command == "cmd:all" ]; then
-  bash -x ${DIR}/multi-ref-model-train.sh train
-  bash -x ${DIR}/multi-ref-model-train.sh finetune
-  bash -x ${DIR}/multi-ref-model-train.sh rl_finetune
+  bash -x ${DIR}/$0 train
+  bash -x ${DIR}/$0 finetune
+  bash -x ${DIR}/$0 rl_finetune
 fi

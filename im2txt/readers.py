@@ -63,7 +63,7 @@ class ImageCaptionReader(BaseReader):
         "image/flipped_ref_words": tf.FixedLenFeature([num_words], tf.int64),
       }
     if FLAGS.localization_attention:
-      feature_map["image/localization"] = tf.FixedLenFeature([4*36], tf.int64)
+      feature_map["image/localization"] = tf.FixedLenFeature([4*36], tf.float32)
 
     features = tf.parse_single_example(serialized_examples, features=feature_map)
     print(" features", features)
@@ -103,7 +103,7 @@ class ImageCaptionReader(BaseReader):
     if FLAGS.localization_attention:
       localizations = features["image/localization"]
       localizations = tf.reshape(localizations,
-                               shape=[1, 4, 36])
+                               shape=[1, 36, 4])
 
     if FLAGS.multiple_references:
       input_seqs = ref_words
@@ -111,6 +111,7 @@ class ImageCaptionReader(BaseReader):
       input_mask = tf.reshape(tf.sequence_mask(tf.reshape(ref_lengths, [-1]), 
                                                maxlen=self.max_ref_length), 
                               [1, self.num_refs, self.max_ref_length])
+      input_mask = tf.cast(input_mask, dtype=tf.int32)
       target_lengths = tf.maximum(ref_lengths - 1, 0)
       if FLAGS.localization_attention:
         return image, input_seqs, target_seqs, input_mask, target_lengths, localizations
@@ -125,6 +126,7 @@ class ImageCaptionReader(BaseReader):
       target_lengths = tf.reshape(tf.maximum(ref_lengths - 1, 0), shape=[self.num_refs])
       input_mask = tf.sequence_mask(target_lengths,
                                     maxlen=FLAGS.max_ref_length)
+      input_mask = tf.cast(input_mask, dtype=tf.int32)
       if FLAGS.localization_attention:
         localizations = tf.tile(localizations, multiples=[self.num_refs,1,1])
         print(images, input_seqs, target_seqs, input_mask, target_lengths, localizations)

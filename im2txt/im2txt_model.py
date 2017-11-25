@@ -135,7 +135,10 @@ def pad_or_truncate(tensor, lengths, axis, max_length):
   right_padding[axis] = tf.maximum(max_length - real_shape[axis], 0)
   padded_tensor = tf.pad(tensor, zip(left_padding, right_padding))
   sliced_tensor = tf.slice(padded_tensor, [0] * len(shape), target_shape)
-  clipped_lengths = tf.minimum(lengths, max_length)
+  if lengths is not None:
+    clipped_lengths = tf.minimum(lengths, max_length)
+  else:
+    clipped_lengths = None
   return sliced_tensor, clipped_lengths
   
 
@@ -180,6 +183,9 @@ class Im2TxtModel(object):
 
     # A float32 Tensor with shape [batch_size * padded_length].
     self.target_cross_entropy_loss_weights = None
+
+    # localization boxes
+    self.localizations = None
 
     # Collection of variables from the inception submodel.
     self.inception_variables = []
@@ -398,6 +404,9 @@ class Im2TxtModel(object):
         if "logits" in outputs:
           # prepare logits, targets and weight
           logits = outputs["logits"]
+          logits = tf.reshape(logits, [FLAGS.batch_size, -1, FLAGS.vocab_size])
+          logits, _ = pad_or_truncate(logits, None, axis=1, max_length=FLAGS.max_ref_length)
+          logits = tf.reshape(logits, [-1, FLAGS.vocab_size])
           targets = tf.reshape(self.target_seqs, [-1])
           weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
 
