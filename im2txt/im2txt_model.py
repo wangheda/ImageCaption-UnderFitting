@@ -107,6 +107,8 @@ tf.flags.DEFINE_integer("max_ref_length", 30, "Max reference length.")
 # image config
 tf.flags.DEFINE_boolean("l2_normalize_image", False,
                         "Normalize image.")
+tf.flags.DEFINE_boolean("localization_attention", False,
+                        "Localization attention.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -235,17 +237,17 @@ class Im2TxtModel(object):
                                     num_epochs=None,
                                     is_training=True,
                                     num_readers=4)
-      if FLAGS.multiple_references:
-        images, input_seqs, target_seqs, input_mask, target_lengths = cols
-        self.target_lengths = target_lengths
+      if FLAGS.localization_attention:
+        images, input_seqs, target_seqs, input_mask, target_lengths, localizations = cols
+        self.localizations = localizations
       else:
-        images, input_seqs, target_seqs, input_mask = cols
-        self.target_lengths = tf.reduce_sum(input_mask, -1)
+        images, input_seqs, target_seqs, input_mask, target_lengths = cols
 
     self.images = images
     self.input_seqs = input_seqs
     self.target_seqs = target_seqs
     self.input_mask = input_mask
+    self.target_lengths = target_lengths
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
@@ -266,7 +268,8 @@ class Im2TxtModel(object):
         trainable=trainable,
         is_training=self.is_training(),
         use_box=FLAGS.use_box,
-        inception_return_tuple=FLAGS.inception_return_tuple)
+        inception_return_tuple=FLAGS.inception_return_tuple,
+        localizations=self.localizations)
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
 
@@ -277,7 +280,8 @@ class Im2TxtModel(object):
           scope="ya_InceptionV3",
           is_training=self.is_training(),
           use_box=FLAGS.use_box,
-          inception_return_tuple=FLAGS.inception_return_tuple)
+          inception_return_tuple=FLAGS.inception_return_tuple,
+          localizations=self.localizations)
       self.ya_inception_variables = {v.op.name.lstrip("ya_"): v for v in 
             tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="ya_InceptionV3")}
 
