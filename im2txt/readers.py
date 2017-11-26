@@ -62,6 +62,8 @@ class ImageCaptionReader(BaseReader):
         "image/flipped_ref_lengths": tf.FixedLenFeature([self.num_refs], tf.int64),
         "image/flipped_ref_words": tf.FixedLenFeature([num_words], tf.int64),
       }
+    if FLAGS.localization_attention:
+      feature_map["image/localization"] = tf.FixedLenFeature([4*36], tf.float32)
 
     features = tf.parse_single_example(serialized_examples, features=feature_map)
     print(" features", features)
@@ -98,24 +100,39 @@ class ImageCaptionReader(BaseReader):
     ref_lengths = tf.reshape(maybe_flipped_ref_lengths,
                              shape=[1, self.num_refs])
 
+    if FLAGS.localization_attention:
+      localizations = features["image/localization"]
+      localizations = tf.reshape(localizations,
+                               shape=[1, 36, 4])
+
     if FLAGS.multiple_references:
       input_seqs = ref_words
       target_seqs = tf.concat([input_seqs[:,:,1:], tf.zeros([1,self.num_refs,1], dtype=tf.int64)], axis=-1)
       input_mask = tf.reshape(tf.sequence_mask(tf.reshape(ref_lengths, [-1]), 
                                                maxlen=self.max_ref_length), 
                               [1, self.num_refs, self.max_ref_length])
+      input_mask = tf.cast(input_mask, dtype=tf.int32)
       target_lengths = tf.maximum(ref_lengths - 1, 0)
-      return image, input_seqs, target_seqs, input_mask, target_lengths
+      if FLAGS.localization_attention:
+        return image, input_seqs, target_seqs, input_mask, target_lengths, localizations
+      else:
+        return image, input_seqs, target_seqs, input_mask, target_lengths
     else:
-      images = tf.tile(image, multiples=[self.num_refs,1,1])
+      images = tf.tile(image, multiples=[self.num_refs,1,1,1])
       input_seqs = tf.reshape(ref_words, 
                               shape=[self.num_refs, self.max_ref_length])
-      target_seqs = tf.concat([input_seqs[:,1:], tf.zeros([self.num_refs,1])], 
+      target_seqs = tf.concat([input_seqs[:,1:], tf.zeros([self.num_refs,1], dtype=tf.int64)], 
                               axis=1)
-      input_lengths = tf.maximum(ref_lengths-1, 0)
-      input_mask = tf.sequence_mask(tf.reshape(input_lengths, shape=[-1]),
+      target_lengths = tf.reshape(tf.maximum(ref_lengths - 1, 0), shape=[self.num_refs])
+      input_mask = tf.sequence_mask(target_lengths,
                                     maxlen=FLAGS.max_ref_length)
-      return images, input_seqs, target_seqs, input_mask
+      input_mask = tf.cast(input_mask, dtype=tf.int32)
+      if FLAGS.localization_attention:
+        localizations = tf.tile(localizations, multiples=[self.num_refs,1,1])
+        print(images, input_seqs, target_seqs, input_mask, target_lengths, localizations)
+        return images, input_seqs, target_seqs, input_mask, target_lengths, localizations
+      else:
+        return images, input_seqs, target_seqs, input_mask, target_lengths
 
 
 def get_input_data_tensors(reader,

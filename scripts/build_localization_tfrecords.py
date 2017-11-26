@@ -27,6 +27,7 @@ import json
 import os.path
 import random
 import sys
+import base64
 
 reload(sys)
 sys.setdefaultencoding('utf8')
@@ -38,13 +39,21 @@ import tensorflow as tf
 # input data
 tf.flags.DEFINE_string("train_image_dir", "data/ai_challenger_caption_train_20170902/caption_train_images_20170902",
                        "Training image directory.")
-tf.flags.DEFINE_string("validate_image_dir", "data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910",
-                       "Validation image directory.")
-
 tf.flags.DEFINE_string("train_captions_file", "data/ai_challenger_caption_train_20170902/caption_train_annotations_20170902.json",
                        "Training captions JSON file.")
-tf.flags.DEFINE_string("validate_captions_file", "data/ai_challenger_caption_validation_20170910/caption_validation_annotations_20170910.json",
-                       "Validation captions JSON file.")
+tf.flags.DEFINE_string("train_localizations_file", "data/bottom_up_attention/aichallenger_train.tsv.small",
+                       "Training captions TSV file.")
+
+tf.flags.DEFINE_string("validate_image_dir", "data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910",
+                       "Validation image directory.")
+tf.flags.DEFINE_string("validate_localizations_file", "data/bottom_up_attention/aichallenger_validate.tsv.small",
+                       "Validating captions TSV file.")
+
+tf.flags.DEFINE_string("test_image_dir", "data/ai_challenger_caption_test1_20170923/caption_test1_images_20170923",
+                       "Test image directory.")
+tf.flags.DEFINE_string("test_localizations_file", "data/bottom_up_attention/aichallenger_test.tsv.small",
+                       "Test captions TSV file.")
+
 
 # use existing word counts file
 tf.flags.DEFINE_string("word_counts_input_file",
@@ -95,7 +104,7 @@ FLAGS = tf.flags.FLAGS
 
 
 ImageMetadata = namedtuple("ImageMetadata",
-                           ["id", "filename", "captions", "flip_captions"])
+                           ["id", "filename", "base_filename", "localization", "captions", "flip_captions"])
 
 # functions to flip caption
 def find_all(string, query):
@@ -207,6 +216,10 @@ def _int64_list(value):
     """Wrapper for inserting a bytes Feature into a SequenceExample proto."""
     return tf.train.Feature(int64_list=tf.train.Int64List(value=value))
 
+def _float_list(value):
+    """Wrapper for inserting a bytes Feature into a SequenceExample proto."""
+    return tf.train.Feature(float_list=tf.train.FloatList(value=value))
+
 def _bytes_list(value):
     """Wrapper for inserting a bytes Feature into a SequenceExample proto."""
     return tf.train.Feature(bytes_list=tf.train.BytesList(value=value))
@@ -214,7 +227,6 @@ def _bytes_list(value):
 def _int64_feature_list(values):
     """Wrapper for inserting an int64 FeatureList into a SequenceExample proto."""
     return tf.train.FeatureList(feature=[_int64_feature(v) for v in values])
-
 
 def _bytes_feature_list(values):
     """Wrapper for inserting a bytes FeatureList into a SequenceExample proto."""
@@ -253,6 +265,8 @@ def _to_sequence_example(image, decoder, vocab):
         print("Skipping file with invalid JPEG data: %s" % image.filename)
         return
 
+    base_filename = image.base_filename
+    localization = image.localization
     caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image.captions]
     caption_lengths = [len(caption) for caption in caption_ids]
     flip_caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image.flip_captions]
@@ -263,6 +277,8 @@ def _to_sequence_example(image, decoder, vocab):
     
     features = tf.train.Features(feature={
         "image/id": _int64_feature(image.id),
+        "image/filename": _bytes_feature(base_filename),
+        "image/localization": _float_list(localization),
         "image/data": _bytes_feature(encoded_image),
         "image/ref_words": _int64_list(caption_ids),
         "image/ref_lengths": _int64_list(caption_lengths),
@@ -341,7 +357,7 @@ def _process_dataset(name, images, vocab, num_shards):
       num_shards: Integer number of shards for the output files.
     """
     # Break up each image into a separate entity for each caption.
-    images = [ImageMetadata(image.id, image.filename, image.captions, image.flip_captions)
+    images = [ImageMetadata(image.id, image.filename, image.base_filename, image.localization, image.captions, image.flip_captions)
               for image in images]
 
     # Shuffle the ordering of images. Make the randomization repeatable.
@@ -423,8 +439,24 @@ def _process_caption_jieba(caption):
     tokenized_caption.append(FLAGS.end_word)
     return tokenized_caption
 
+def _load_localization_file(localizations_file):
+    loc_dict = {}
+    with open(localizations_file) as F:
+        for line in F:
+            filename, width, height, num_boxes, box_str = line.strip().split()
+            num_boxes = int(num_boxes)
+            assert num_boxes == 36
+            box_blob = base64.decodestring(box_str)
+            box_array = np.frombuffer(box_blob, dtype=np.float32)
+            assert len(box_array) == 4*num_boxes
+            for i in xrange(0, len(box_array), 4):
+                l1, u1, l2, u2 = box_array[i:i+4]
+                assert l1 < l2
+                assert u1 < u2
+            loc_dict[filename] = box_array
+        return loc_dict
 
-def _load_and_process_metadata(captions_file, image_dir):
+def _load_and_process_metadata(captions_file, localizations_file, image_dir):
     """Loads image metadata from a JSON file and processes the captions.
     Args:
       captions_file: Json file containing caption annotations.
@@ -432,6 +464,7 @@ def _load_and_process_metadata(captions_file, image_dir):
     Returns:
       A list of ImageMetadata.
     """
+    loc_dict = _load_localization_file(localizations_file)
     image_id = set([])
     id_to_captions = {}
     with open(captions_file, 'r') as f:
@@ -459,10 +492,11 @@ def _load_and_process_metadata(captions_file, image_dir):
     num_captions = 0
     id = 0
     for base_filename in image_id:
+        localization = loc_dict[base_filename]
         filename = os.path.join(image_dir, base_filename + '.jpg')
         captions = [_process_caption_jieba(c) for c in id_to_captions[base_filename]]
         flip_captions = [_process_caption_jieba(func_flip_caption(c)) for c in id_to_captions[base_filename]]
-        image_metadata.append(ImageMetadata(id, filename, captions, flip_captions))
+        image_metadata.append(ImageMetadata(id, filename, base_filename, localization, captions, flip_captions))
         id = id + 1
         num_captions += len(captions)
     print("Finished processing %d captions for %d images in %s" %
@@ -487,7 +521,8 @@ def main(unused_argv):
 
     # Load image metadata from caption files.
     train_dataset = _load_and_process_metadata(FLAGS.train_captions_file,
-                                                    FLAGS.train_image_dir)
+                                               FLAGS.train_localizations_file,
+                                               FLAGS.train_image_dir)
 
     """
     # Redistribute the MSCOCO data as follows:

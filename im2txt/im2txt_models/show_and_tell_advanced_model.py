@@ -361,10 +361,11 @@ class ShowAndTellAdvancedModel(object):
 
     if mode == "train":
       if FLAGS.rl_training == True:
-        return {"sample_results": outputs,
-                "sample_results_sequence_lengths": outputs_sequence_lengths,
-                "greedy_results": greedy_outputs,
-                "greedy_results_sequence_lengths": greedy_outputs_sequence_lengths,}
+        return {"sample_caption_words"   : outputs.sample_id,
+                "sample_caption_logits"  : outputs.rnn_output,
+                "sample_caption_lengths" : outputs_sequence_lengths,
+                "greedy_caption_words"   : greedy_outputs.sample_id,
+                "greedy_caption_lengths" : greedy_outputs_sequence_lengths}
       else:
         logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
         model_outputs["logits"] = logits
