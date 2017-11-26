@@ -68,6 +68,7 @@ if [ $command == "cmd:finetune" ]; then
     --num_lstm_layers=1 \
     --support_ingraph=True \
     --train_inception_with_decay=True \
+    --swap_memory=True \
     --reader=ImageCaptionReader \
     --cropping_images=False \
     --number_of_steps=$STEPS

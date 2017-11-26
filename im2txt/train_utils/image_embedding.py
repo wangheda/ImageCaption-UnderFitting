@@ -37,23 +37,27 @@ def localization_attentions(net, localizations):
   u1 = tf.floor(tf.multiply(localizations[:,:,1], float(h) / float(FLAGS.image_height)))
   l2 = tf.ceil(tf.multiply(localizations[:,:,2], float(w) / float(FLAGS.image_width)))
   u2 = tf.ceil(tf.multiply(localizations[:,:,3], float(h) / float(FLAGS.image_height)))
-  l1, u1, l2, u2 = map(lambda x: tf.cast(x, dtype=tf.int64), [l1, u1, l2, u2])
+  l1, u1, l2, u2 = map(lambda x: tf.cast(x, dtype=tf.int32), [l1, u1, l2, u2])
 
-  tensors = tf.unstack(net, axis=0)
-  all_features = []
-  for i in xrange(len(tensors)):
-    features = []
+  idx_u = tf.reshape(tf.range(0, h, dtype=tf.int32), shape=[h, 1])
+  idx_l = tf.reshape(tf.range(0, w, dtype=tf.int32), shape=[1, w])
+  masks = []
+  for i in xrange(image_shape[0]):
+    mask = []
     for j in xrange(loc_shape[1]):
-      begin = [u1[i,j], l1[i,j], 0]
-      size = [u2[i,j]-u1[i,j], l2[i,j]-l1[i,j], image_shape[-1]]
-      feature = tf.reduce_mean(tf.slice(tensors[i], begin, size), axis=[0,1])
-      feature = tf.reshape(feature, shape=[image_shape[-1]])
-      features.append(feature)
-    features = tf.stack(features, axis=0)
-    all_features.append(features)
-  all_features = tf.stack(all_features, axis=0)
-  print(all_features)
-  return all_features
+      m = tf.logical_and(tf.logical_and(idx_u >= u1[i,j], idx_u < u2[i,j]),
+                         tf.logical_and(idx_l >= l1[i,j], idx_l < l2[i,j]))
+      m = tf.cast(m, tf.float32)
+      m = tf.multiply(m, 1.0 / (tf.reduce_sum(m) + 1e-9))
+      mask.append(m)
+    mask = tf.stack(mask, axis=0)
+    masks.append(mask)
+  masks = tf.stack(masks, axis=0)
+  masks = tf.stop_gradient(masks)
+
+  features = tf.einsum("ijkl,imjk->iml", net, masks)
+  print(features)
+  return features
 
 def inception_v3(images,
                  trainable=True,
