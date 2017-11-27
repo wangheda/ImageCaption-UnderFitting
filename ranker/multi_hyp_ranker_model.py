@@ -30,7 +30,7 @@ import text_models
 import match_models
 from image_models import image_embedding
 
-from readers import get_input_data_tensors
+from multi_hyp_ranker_readers import get_input_data_tensors
 
 tf.flags.DEFINE_string("text_model", "LstmModel",
                         "The text model.")
@@ -136,6 +136,7 @@ class RankerModel(object):
       self.target_seqs (training and eval only)
       self.input_mask (training and eval only)
     """
+    print("build inputs!")
     if self.mode == "inference":
       #assert FLAGS.batch_size % FLAGS.lines_per_image == 0
       image_ids, images, captions, seqlens, scores = \
