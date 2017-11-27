@@ -27,6 +27,7 @@ import tensorflow as tf
 import im2txt_models
 
 import losses
+import readers
 from train_utils import image_embedding
 from train_utils.image_processing import simple_process_image
 from train_utils.inputs import get_attributes_target, get_images_and_captions, caption_to_multi_labels
@@ -71,6 +72,8 @@ tf.flags.DEFINE_integer("image_height", 299,
                         "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_integer("image_width", 299,
                         "Dimensions of Inception v3 input images.")
+tf.flags.DEFINE_integer("image_channel", 3,
+                        "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_float("initializer_scale", 0.08,
                         "Scale used to initialize model variables.")
 tf.flags.DEFINE_boolean("support_ingraph", False,
@@ -95,10 +98,17 @@ tf.flags.DEFINE_string("vocab_file", "",
 # reinforcement learning config
 tf.flags.DEFINE_boolean("rl_training", False,
                         "Train with reinforcement learning.")
+tf.flags.DEFINE_boolean("rl_training_along_with_mle", False,
+                        "Train with reinforcement learning with the mle (need to use it along with rl_training).")
 tf.flags.DEFINE_string("rl_training_loss", "SelfCriticalLoss",
                         "Type of loss in reinforcement learning.")
 tf.flags.DEFINE_integer("max_ref_length", 30, "Max reference length.")
 
+# image config
+tf.flags.DEFINE_boolean("l2_normalize_image", False,
+                        "Normalize image.")
+tf.flags.DEFINE_boolean("localization_attention", False,
+                        "Localization attention.")
 
 FLAGS = tf.app.flags.FLAGS
 
@@ -125,7 +135,10 @@ def pad_or_truncate(tensor, lengths, axis, max_length):
   right_padding[axis] = tf.maximum(max_length - real_shape[axis], 0)
   padded_tensor = tf.pad(tensor, zip(left_padding, right_padding))
   sliced_tensor = tf.slice(padded_tensor, [0] * len(shape), target_shape)
-  clipped_lengths = tf.minimum(lengths, max_length)
+  if lengths is not None:
+    clipped_lengths = tf.minimum(lengths, max_length)
+  else:
+    clipped_lengths = None
   return sliced_tensor, clipped_lengths
   
 
@@ -171,6 +184,9 @@ class Im2TxtModel(object):
     # A float32 Tensor with shape [batch_size * padded_length].
     self.target_cross_entropy_loss_weights = None
 
+    # localization boxes
+    self.localizations = None
+
     # Collection of variables from the inception submodel.
     self.inception_variables = []
     self.ya_inception_variables = []
@@ -214,15 +230,30 @@ class Im2TxtModel(object):
         input_mask = None
       else:
         images, input_seqs, target_seqs, input_mask = get_images_and_captions(is_training=self.is_training)
-
-      self.images = images
-      self.input_seqs = input_seqs
-      self.input_mask = input_mask
-      self.target_seqs = target_seqs
       if self.mode == "inference":
         self.target_lengths = None
       else:
         self.target_lengths = tf.reduce_sum(input_mask, -1)
+    elif FLAGS.reader == "ImageCaptionReader":
+      reader = readers.ImageCaptionReader(num_refs=FLAGS.num_refs,
+                                  max_ref_length=FLAGS.max_ref_length)
+      cols = readers.get_input_data_tensors(reader,
+                                    data_pattern=FLAGS.input_file_pattern,
+                                    batch_size=FLAGS.batch_size,
+                                    num_epochs=None,
+                                    is_training=True,
+                                    num_readers=4)
+      if FLAGS.localization_attention:
+        images, input_seqs, target_seqs, input_mask, target_lengths, localizations = cols
+        self.localizations = localizations
+      else:
+        images, input_seqs, target_seqs, input_mask, target_lengths = cols
+
+    self.images = images
+    self.input_seqs = input_seqs
+    self.target_seqs = target_seqs
+    self.input_mask = input_mask
+    self.target_lengths = target_lengths
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
@@ -243,7 +274,8 @@ class Im2TxtModel(object):
         trainable=trainable,
         is_training=self.is_training(),
         use_box=FLAGS.use_box,
-        inception_return_tuple=FLAGS.inception_return_tuple)
+        inception_return_tuple=FLAGS.inception_return_tuple,
+        localizations=self.localizations)
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
 
@@ -254,7 +286,8 @@ class Im2TxtModel(object):
           scope="ya_InceptionV3",
           is_training=self.is_training(),
           use_box=FLAGS.use_box,
-          inception_return_tuple=FLAGS.inception_return_tuple)
+          inception_return_tuple=FLAGS.inception_return_tuple,
+          localizations=self.localizations)
       self.ya_inception_variables = {v.op.name.lstrip("ya_"): v for v in 
             tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="ya_InceptionV3")}
 
@@ -308,17 +341,30 @@ class Im2TxtModel(object):
       if "top_n_attributes" in outputs:
         self.top_n_attributes = outputs["top_n_attributes"]
     else:
+      if "mle_caption_logits" in outputs:
+        logits = tf.reshape(outputs["mle_caption_logits"], [-1, FLAGS.vocab_size])
+        targets = tf.reshape(self.target_seqs, [-1])
+        weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+
+        # Compute losses.
+        mle_loss_fn = losses.SparseSoftmaxCrossEntropyLoss()
+        mle_loss = mle_loss_fn.calculate_loss(logits, targets, weights)
+
+        # Logging losses.
+        tf.summary.scalar("losses/mle_loss", mle_loss)
+        tf.losses.add_loss(mle_loss)
+
       # caption loss
       if FLAGS.rl_training == True:
         # rl loss
         # load greed caption and sample caption to calculate reward
         target_caption_words = self.target_seqs
         target_caption_lengths = self.target_lengths
-        greedy_caption_words = outputs["greedy_results"].sample_id
-        greedy_caption_lengths = outputs["greedy_results_sequence_lengths"]
-        sample_caption_logits = outputs["sample_results"].rnn_output
-        sample_caption_words = outputs["sample_results"].sample_id
-        sample_caption_lengths = outputs["sample_results_sequence_lengths"]
+        greedy_caption_words = outputs["greedy_caption_words"]
+        greedy_caption_lengths = outputs["greedy_caption_lengths"]
+        sample_caption_logits = outputs["sample_caption_logits"]
+        sample_caption_words = outputs["sample_caption_words"]
+        sample_caption_lengths = outputs["sample_caption_lengths"]
 
         if get_rank(target_caption_words) == 2:
           target_caption_words = tf.expand_dims(target_caption_words, 1)
@@ -357,22 +403,25 @@ class Im2TxtModel(object):
         tf.losses.add_loss(rl_loss)
 
       else:
-        # prepare logits, targets and weight
-        logits = outputs["logits"]
-        targets = tf.reshape(self.target_seqs, [-1])
-        weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+        if "logits" in outputs:
+          # prepare logits, targets and weight
+          logits = outputs["logits"]
+          logits = tf.reshape(logits, [FLAGS.batch_size, -1, FLAGS.vocab_size])
+          logits, _ = pad_or_truncate(logits, None, axis=1, max_length=FLAGS.max_ref_length)
+          logits = tf.reshape(logits, [-1, FLAGS.vocab_size])
+          targets = tf.reshape(self.target_seqs, [-1])
+          weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
 
-        # Compute losses.
-        loss_fn = losses.SparseSoftmaxCrossEntropyLoss()
-        batch_loss = loss_fn.calculate_loss(logits, targets, weights)
+          # Compute losses.
+          loss_fn = losses.SparseSoftmaxCrossEntropyLoss()
+          batch_loss = loss_fn.calculate_loss(logits, targets, weights)
 
-        # Logging losses.
-        tf.summary.scalar("losses/batch_loss", batch_loss)
-        tf.losses.add_loss(batch_loss)
+          # Logging losses.
+          tf.summary.scalar("losses/batch_loss", batch_loss)
+          tf.losses.add_loss(batch_loss)
 
-        self.target_cross_entropy_losses = batch_loss # Used in evaluation.
-        self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
-        
+          self.target_cross_entropy_losses = batch_loss # Used in evaluation.
+          self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
 
         # multi-label-loss
         if "attributes_logits" in outputs and "attributes_mask" in outputs:
@@ -412,7 +461,6 @@ class Im2TxtModel(object):
           tf.summary.scalar("losses/word_loss", word_loss)
           tf.losses.add_loss(word_loss)
           self.word_loss = word_loss
-
 
       total_loss = tf.losses.get_total_loss()
 

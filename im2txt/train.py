@@ -146,9 +146,9 @@ def main(unused_argv):
       print("%d variables to exclude." % len(exclude_variable_names))
 
       if exclude_variables:
-        local_init_op = control_flow_ops.group(tf.variables_initializer(exclude_variables),
-                                               tf_variables.local_variables_initializer(),
-                                               lookup_ops.tables_initializer())
+        local_init_op = tf.group(tf.variables_initializer(exclude_variables),
+                                 tf.local_variables_initializer(),
+                                 tf.tables_initializer())
 
       variables_to_restore = tf.contrib.slim.get_variables_to_restore(exclude=exclude_variable_names)
 
