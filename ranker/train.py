@@ -69,7 +69,13 @@ tf.flags.DEFINE_string("exclude_variable_patterns", None,
                        "Filter (by comma separated regular expressions) variables that will not be"
                        " loaded from and saved to checkpoints.")
 
-import ranker_model
+tf.flags.DEFINE_boolean("use_multi_hyp_ranker", False,
+                        "Whether to use multi_hyp_ranker.")
+
+if FLAGS.use_multi_hyp_ranker:
+  import multi_hyp_ranker_model as ranker_model
+else:
+  import ranker_model as ranker_model
 
 tf.logging.set_verbosity(tf.logging.INFO)
 
