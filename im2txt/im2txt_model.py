@@ -231,9 +231,9 @@ class Im2TxtModel(object):
       else:
         images, input_seqs, target_seqs, input_mask = get_images_and_captions(is_training=self.is_training)
       if self.mode == "inference":
-        self.target_lengths = None
+        target_lengths = None
       else:
-        self.target_lengths = tf.reduce_sum(input_mask, -1)
+        target_lengths = tf.reduce_sum(input_mask, -1)
     elif FLAGS.reader == "ImageCaptionReader":
       reader = readers.ImageCaptionReader(num_refs=FLAGS.num_refs,
                                   max_ref_length=FLAGS.max_ref_length)
