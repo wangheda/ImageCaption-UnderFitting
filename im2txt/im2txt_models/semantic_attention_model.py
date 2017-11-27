@@ -157,7 +157,7 @@ class SemanticAttentionModel(object):
         raise Exception("Unknown mode!")
 
       maximum_iterations = None if mode == "train" else FLAGS.max_caption_length
-      outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(
+      outputs, _ , outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
         decoder=decoder,
         output_time_major=False,
         impute_finished=False,
@@ -170,7 +170,7 @@ class SemanticAttentionModel(object):
               "attributes_mask": attributes_mask,
               "idf_weighted_mask": idf_weighted_mask}
     else:
-      return {"bs_results": outputs, "top_n_attributes": (top_attributes_probs, top_attributes_indices)}
+      return {"bs_results": outputs, "bs_results_lengths":outputs_sequence_lengths, "top_n_attributes": (top_attributes_probs, top_attributes_indices)}
 
   def build_attributes_mask(self, attributes_num=1000):
     input = open(FLAGS.vocab_file)
