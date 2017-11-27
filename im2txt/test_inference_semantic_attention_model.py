@@ -36,7 +36,6 @@ FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_string("checkpoint_path", "",
                        "Model checkpoint file or directory containing a "
                        "model checkpoint file.")
-tf.flags.DEFINE_string("vocab_file", "", "Text file containing the vocabulary.")
 tf.flags.DEFINE_string("input_file_pattern", "", "The pattern of images.")
 tf.flags.DEFINE_float("gpu_memory_fraction", 1.0, "Fraction of gpu memory used in inference.")
 
@@ -94,8 +93,8 @@ def main(_):
 
       print(filename)
 
-      predicted_ids, scores, top_n_attributes = sess.run(
-        [model.predicted_ids, model.scores, model.top_n_attributes], 
+      predicted_ids, predicted_ids_lengths, scores, top_n_attributes = sess.run(
+        [model.predicted_ids, model.predicted_ids_lengths, model.scores, model.top_n_attributes], 
         feed_dict={"image_feed:0": image})
 
       predicted_ids = np.transpose(predicted_ids, (0,2,1))   
@@ -104,6 +103,7 @@ def main(_):
       attributes = [vocab.id_to_word(w) for w in attr_ids[0]]
       print(" ".join(attributes))
       print(attr_probs[0])
+      print(predicted_ids_lengths[0])
       #print(top_n_attributes)
       for caption in predicted_ids[0]:
         print(caption)

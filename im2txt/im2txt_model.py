@@ -303,6 +303,8 @@ class Im2TxtModel(object):
       elif "bs_results" in outputs:
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
+        if "bs_results_lengths" in outputs:
+          self.predicted_ids_lengths = outputs["bs_results_lengths"]
       if "top_n_attributes" in outputs:
         self.top_n_attributes = outputs["top_n_attributes"]
     else:
