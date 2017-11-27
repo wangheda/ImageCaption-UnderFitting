@@ -47,7 +47,6 @@ class ShowAndTellAdvancedModel(object):
         image_model_output, middle_layer = image_model_output
       else:
         image_model_output = image_model_output
-    
 
     # build_seq_embeddings
     with tf.variable_scope("seq_embedding"):
@@ -75,7 +74,7 @@ class ShowAndTellAdvancedModel(object):
               initializer=initializer)
           lexical_embedding_map = tf.matmul(lexical_mapping, lexical_embedding)
           embedding_map = tf.concat([embedding_map, lexical_embedding_map], axis=1)
-        
+
       seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
 
     embedding_size = embedding_map.get_shape().as_list()[1]
@@ -186,7 +185,7 @@ class ShowAndTellAdvancedModel(object):
             initializer=initializer)
       else:
         semantic_embedding_map = embedding_map
-        
+
       no_gradient_word_predictions = tf.stop_gradient(word_predictions)
 
       if FLAGS.semantic_attention_type == "wordhash":
@@ -261,45 +260,71 @@ class ShowAndTellAdvancedModel(object):
       # lstm_scope.reuse_variables()
 
       if mode == "train":
-        sequence_length = tf.reduce_sum(input_mask, 1)
-        if FLAGS.use_scheduled_sampling:
-          def get_processed_step(step):
-            step = tf.maximum(step, FLAGS.scheduled_sampling_starting_step)
-            step = tf.minimum(step, FLAGS.scheduled_sampling_ending_step)
-            step = tf.maximum(step - FLAGS.scheduled_sampling_starting_step, 0)
-            step = tf.cast(step, tf.float32)
-            return step
-            
-          def inverse_sigmoid_decay_fn(step):
-            step = get_processed_step(step)
-            k = float(FLAGS.inverse_sigmoid_decay_k)
-            p = 1.0 - k / (k + tf.exp(step / k))
-            return p
-          
-          def linear_decay_fn(step):
-            step = get_processed_step(step)
-            slope = (FLAGS.scheduled_sampling_ending_rate - FLAGS.scheduled_sampling_starting_rate) / (FLAGS.scheduled_sampling_ending_step - FLAGS.scheduled_sampling_starting_step)
-            a = FLAGS.scheduled_sampling_starting_rate
-            p = a + slope * step
-            return p
-
-          sampling_fn = {
-              "linear": linear_decay_fn, 
-              "inverse_sigmoid": inverse_sigmoid_decay_fn
-          }
-
-          sampling_probability = sampling_fn[FLAGS.scheduled_sampling_method](global_step)
-          tf.summary.scalar("scheduled_sampling/prob", sampling_probability)
-
-          helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
-            inputs=seq_embeddings,
-            sequence_length=sequence_length,
+        if FLAGS.rl_training == True:
+          # use rl train
+          # 1. generate greedy captions
+          greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
             embedding=embedding_map,
-            sampling_probability=sampling_probability)
+            start_tokens=tf.fill([batch_size], FLAGS.start_token),
+            end_token=FLAGS.end_token)
+          greedy_decoder = tf.contrib.seq2seq.BasicDecoder(
+            cell=lstm_cell,
+            helper=greedy_helper,
+            initial_state=initial_state,
+            output_layer=output_layer)
+          greedy_outputs, _ , greedy_outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
+            decoder=greedy_decoder,
+            output_time_major=False,
+            impute_finished=False,
+            maximum_iterations=FLAGS.max_caption_length)
+
+          # 2. generate sample captions
+          helper = tf.contrib.seq2seq.SampleEmbeddingHelper(
+            embedding=embedding_map,
+            start_tokens=tf.fill([batch_size], FLAGS.start_token),
+            end_token=FLAGS.end_token)
         else:
-          helper = tf.contrib.seq2seq.TrainingHelper(
-            inputs=seq_embeddings,
-            sequence_length=sequence_length)
+          # use cross entropy
+          sequence_length = tf.reduce_sum(input_mask, 1)
+          if FLAGS.use_scheduled_sampling:
+            def get_processed_step(step):
+              step = tf.maximum(step, FLAGS.scheduled_sampling_starting_step)
+              step = tf.minimum(step, FLAGS.scheduled_sampling_ending_step)
+              step = tf.maximum(step - FLAGS.scheduled_sampling_starting_step, 0)
+              step = tf.cast(step, tf.float32)
+              return step
+
+            def inverse_sigmoid_decay_fn(step):
+              step = get_processed_step(step)
+              k = float(FLAGS.inverse_sigmoid_decay_k)
+              p = 1.0 - k / (k + tf.exp(step / k))
+              return p
+
+            def linear_decay_fn(step):
+              step = get_processed_step(step)
+              slope = (FLAGS.scheduled_sampling_ending_rate - FLAGS.scheduled_sampling_starting_rate) / (FLAGS.scheduled_sampling_ending_step - FLAGS.scheduled_sampling_starting_step)
+              a = FLAGS.scheduled_sampling_starting_rate
+              p = a + slope * step
+              return p
+
+            sampling_fn = {
+                "linear": linear_decay_fn, 
+                "inverse_sigmoid": inverse_sigmoid_decay_fn
+            }
+
+            sampling_probability = sampling_fn[FLAGS.scheduled_sampling_method](global_step)
+            tf.summary.scalar("scheduled_sampling/prob", sampling_probability)
+
+            helper = tf.contrib.seq2seq.ScheduledEmbeddingTrainingHelper(
+              inputs=seq_embeddings,
+              sequence_length=sequence_length,
+              embedding=embedding_map,
+              sampling_probability=sampling_probability)
+          else:
+            helper = tf.contrib.seq2seq.TrainingHelper(
+              inputs=seq_embeddings,
+              sequence_length=sequence_length)
+
         decoder = tf.contrib.seq2seq.BasicDecoder(
           cell=lstm_cell,
           helper=helper,
@@ -320,16 +345,30 @@ class ShowAndTellAdvancedModel(object):
       else:
         raise Exception("Unknown mode!")
 
-      maximum_iterations = None if mode == "train" else FLAGS.max_caption_length
-      outputs, _ , _ = tf.contrib.seq2seq.dynamic_decode(
+      if mode == "train":
+        if FLAGS.rl_training == True:
+          maximum_iterations = FLAGS.max_caption_length
+        else:
+          maximum_iterations = None
+      else:
+        maximum_iterations = FLAGS.max_caption_length
+
+      outputs, _ , outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
         decoder=decoder,
         output_time_major=False,
         impute_finished=False,
         maximum_iterations=maximum_iterations)
 
     if mode == "train":
-      logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
-      model_outputs["logits"] = logits
+      if FLAGS.rl_training == True:
+        return {"sample_caption_words"   : outputs.sample_id,
+                "sample_caption_logits"  : outputs.rnn_output,
+                "sample_caption_lengths" : outputs_sequence_lengths,
+                "greedy_caption_words"   : greedy_outputs.sample_id,
+                "greedy_caption_lengths" : greedy_outputs_sequence_lengths}
+      else:
+        logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
+        model_outputs["logits"] = logits
     else:
       model_outputs["bs_results"] = outputs
 
@@ -357,5 +396,3 @@ class ShowAndTellAdvancedModel(object):
     lexical_size = len(mapping[0])
     lexical_mapping = tf.constant(mapping, dtype=tf.float32, shape=[FLAGS.vocab_size, lexical_size])
     return lexical_mapping, lexical_size
-      
-        

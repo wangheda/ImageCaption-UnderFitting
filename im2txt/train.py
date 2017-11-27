@@ -67,11 +67,6 @@ tf.flags.DEFINE_string("exclude_variable_patterns", None,
                        "Filter (by comma separated regular expressions) variables that will not be"
                        " loaded from and saved to checkpoints.")
 
-# semantic attention config
-tf.flags.DEFINE_boolean("only_attributes_loss", False,
-                        "Train only use aux_loss or not.")
-tf.flags.DEFINE_string("vocab_file", "",
-                       "Text file containing the vocabulary.")
 
 import im2txt_model
 
@@ -151,7 +146,9 @@ def main(unused_argv):
       print("%d variables to exclude." % len(exclude_variable_names))
 
       if exclude_variables:
-        local_init_op = tf.variables_initializer(exclude_variables)
+        local_init_op = tf.group(tf.variables_initializer(exclude_variables),
+                                 tf.local_variables_initializer(),
+                                 tf.tables_initializer())
 
       variables_to_restore = tf.contrib.slim.get_variables_to_restore(exclude=exclude_variable_names)
 
@@ -177,7 +174,6 @@ def main(unused_argv):
       save_summaries_secs = 120,
       save_interval_secs = FLAGS.save_interval_secs,
       saver = saver)
-
 
 if __name__ == "__main__":
   tf.app.run()

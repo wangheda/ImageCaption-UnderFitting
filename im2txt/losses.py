@@ -18,9 +18,18 @@ import sys
 import numpy as np
 import tensorflow as tf
 from tensorflow import flags
+import tf_cider
 
 FLAGS = flags.FLAGS
 
+LOG_TENSOR = True
+
+def log_tensor(name, g=None, l=None):
+  if LOG_TENSOR:
+    if g is None and l is None:
+      print >> sys.stderr, name, eval(name, {"self":self})
+    else:
+      print >> sys.stderr, name, eval(name, g, l)
 
 class BaseLoss(object):
   """Inherit from this class when implementing new losses."""
@@ -42,188 +51,107 @@ class BaseLoss(object):
     raise NotImplementedError()
 
 
-class WeightedCrossEntropyLoss(BaseLoss):
-  """Calculate the cross entropy loss between the predictions and labels.
-     1 -> 0 will be punished hard, while the other way will not punished not hard.
-  """
-
-  def calculate_loss(self, predictions, labels, **unused_params):
-    false_positive_punishment = FLAGS.false_positive_punishment
-    false_negative_punishment = FLAGS.false_negative_punishment
-    with tf.name_scope("loss_xent_recall"):
-      epsilon = 10e-6
-      float_labels = tf.cast(labels, tf.float32)
-      cross_entropy_loss = false_negative_punishment * float_labels * tf.log(predictions + epsilon) \
-          + false_positive_punishment * ( 1 - float_labels) * tf.log(1 - predictions + epsilon)
-      cross_entropy_loss = tf.negative(cross_entropy_loss)
-      return tf.reduce_mean(tf.reduce_sum(cross_entropy_loss, 1))
-
-
-class MeanSquareErrorLoss(BaseLoss):
-  """Calculate the MSE loss between the predictions and labels.
-  """
-
-  def calculate_loss(self, predictions, labels, **unused_params):
-    with tf.name_scope("loss_mse"):
-      shape = predictions.get_shape().as_list()
-      dims = range(len(shape))
-      epsilon = 10e-6
-      float_labels = tf.cast(labels, tf.float32)
-      mse_loss = tf.square(float_labels - predictions)
-      return tf.reduce_mean(tf.reduce_sum(mse_loss, dims[1:]))
-
-
 class CrossEntropyLoss(BaseLoss):
-  """Calculate the cross entropy loss between the predictions and labels.
-  """
-
-  def calculate_loss(self, predictions, labels, weights=None, **unused_params):
-    with tf.name_scope("loss_xent"):
-      shape = predictions.get_shape().as_list()
-      dims = range(len(shape))
-      epsilon = 10e-6
-      float_labels = tf.cast(labels, tf.float32)
-      cross_entropy_loss = float_labels * tf.log(predictions + epsilon) + (
-          1 - float_labels) * tf.log(1 - predictions + epsilon)
-      cross_entropy_loss = tf.negative(cross_entropy_loss)
-      return tf.reduce_mean(tf.reduce_sum(cross_entropy_loss, dims[1:]))
-
-
-class IOULoss(BaseLoss):
-  """Calculate the cross entropy loss between the predictions and labels.
-  """
-
-  def calculate_loss(self, predictions, labels, weights=None, **unused_params):
-    """Returns a (approx) IOU score
-    intesection = y_pred.flatten() * y_true.flatten()
-    Then, IOU = 2 * intersection / (y_pred.sum() + y_true.sum() + 1e-7) + 1e-7
-    Args:
-    y_pred (4-D array): (N, H, W, 1)
-    y_true (4-D array): (N, H, W, 1)
-    Returns:
-    float: IOU score
-    """
-    with tf.name_scope("loss_iou"):
-      float_labels = tf.cast(labels, tf.float32)
-      print float_labels, predictions
-      dims = predictions.get_shape().as_list()[1:]
-      if len(dims) == 3:
-        H, W, C = dims
-        intersection = 2 * tf.reduce_sum(predictions * float_labels, axis=[1,2,3]) + 1e-7
-        denominator = tf.reduce_sum(predictions, axis=[1,2,3]) + tf.reduce_sum(float_labels, axis=[1,2,3]) + 1e-7
-      elif len(dims) == 2:
-        H, W = dims
-        intersection = 2 * tf.reduce_sum(predictions * float_labels, axis=[1,2]) + 1e-7
-        denominator = tf.reduce_sum(predictions, axis=[1,2]) + tf.reduce_sum(float_labels, axis=[1,2]) + 1e-7
-      return - tf.reduce_mean(intersection / denominator)
-
-
-class IOUCrossEntropyLoss(BaseLoss):
-  """Calculate the cross entropy loss between the predictions and labels.
-  """
-
-  def calculate_loss(self, predictions, labels, weights=None, **unused_params):
-    iou_loss_fn = IOULoss()
-    cross_ent_fn = CrossEntropyLoss()
-    return 0.0001 * cross_ent_fn.calculate_loss(predictions, labels) + 0.9999 * iou_loss_fn.calculate_loss(predictions, labels)
-
-
-class HingeLoss(BaseLoss):
-  """Calculate the hinge loss between the predictions and labels.
-
-  Note the subgradient is used in the backpropagation, and thus the optimization
-  may converge slower. The predictions trained by the hinge loss are between -1
-  and +1.
-  """
-
-  def calculate_loss(self, predictions, labels, b=1.0, **unused_params):
-    with tf.name_scope("loss_hinge"):
-      float_labels = tf.cast(labels, tf.float32)
-      all_zeros = tf.zeros(tf.shape(float_labels), dtype=tf.float32)
-      all_ones = tf.ones(tf.shape(float_labels), dtype=tf.float32)
-      sign_labels = tf.subtract(tf.scalar_mul(2, float_labels), all_ones)
-      hinge_loss = tf.maximum(
-          all_zeros, tf.scalar_mul(b, all_ones) - sign_labels * predictions)
-      return tf.reduce_mean(tf.reduce_sum(hinge_loss, 1))
-
-class SoftmaxLoss(BaseLoss):
-  """Calculate the softmax loss between the predictions and labels.
-
-  The function calculates the loss in the following way: first we feed the
-  predictions to the softmax activation function and then we calculate
-  the minus linear dot product between the logged softmax activations and the
-  normalized ground truth label.
-
-  It is an extension to the one-hot label. It allows for more than one positive
-  labels for each sample.
-  """
-
-  def calculate_loss(self, predictions, labels, **unused_params):
-    with tf.name_scope("loss_softmax"):
-      epsilon = 10e-8
-      float_labels = tf.cast(labels, tf.float32)
-      # l1 normalization (labels are no less than 0)
-      label_rowsum = tf.maximum(
-          tf.reduce_sum(float_labels, 1, keep_dims=True),
-          epsilon)
-      norm_float_labels = tf.div(float_labels, label_rowsum)
-      softmax_outputs = tf.nn.softmax(predictions)
-      softmax_loss = tf.negative(tf.reduce_sum(
-          tf.multiply(norm_float_labels, tf.log(softmax_outputs)), 1))
-    return tf.reduce_mean(softmax_loss)
-
-class MultiTaskLoss(BaseLoss):
-  """This is a vitural loss
-  """
-  def calculate_loss(self, unused_predictions, unused_labels, **unused_params):
-    raise NotImplementedError()
-
-  def get_support(self, labels, support_type=None):
-    if "," in support_type:
-      new_labels = []
-      for st in support_type.split(","):
-        new_labels.append(tf.cast(self.get_support(labels, st), dtype=tf.float32))
-      support_labels = tf.stack(new_labels, axis=3)
-      return support_labels
-    elif support_type == "label":
-      float_labels = tf.cast(labels, dtype=tf.float32)
-      return float_labels
+  def calculate_loss(self, predictions, labels, weights=None,
+                     **unused_params):
+    loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=labels,
+                                                   logits=predictions)
+    if weights is not None:
+      loss = tf.div(tf.reduce_sum(loss * weights),
+                    tf.reduce_sum(weights) + epsilon)
     else:
-      raise NotImplementedError()
+      loss = tf.reduce_mean(loss)
+    return loss
 
-class MultiTaskCrossEntropyLoss(MultiTaskLoss):
-  """Calculate the loss between the predictions and labels.
-  """
-  def calculate_loss(self, predictions, support_predictions, labels, **unused_params):
-    support_labels = self.get_support(labels, support_type=FLAGS.support_type)
-    ce_loss_fn = CrossEntropyLoss()
-    print >> sys.stderr, predictions, labels
-    cross_entropy_loss = ce_loss_fn.calculate_loss(predictions, labels, **unused_params)
-    cross_entropy_loss2 = ce_loss_fn.calculate_loss(support_predictions, support_labels, **unused_params)
-    return cross_entropy_loss * (1.0 - FLAGS.support_loss_percent) + cross_entropy_loss2 * FLAGS.support_loss_percent
+class SparseSoftmaxCrossEntropyLoss(BaseLoss):
+  def calculate_loss(self, predictions, labels, weights=None, 
+                     epsilon=1e-9, **unused_params):
+    loss = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=labels,
+                                                          logits=predictions)
+    if weights is not None:
+      loss = tf.div(tf.reduce_sum(loss * weights),
+                    tf.reduce_sum(weights) + epsilon)
+    else:
+      loss = tf.reduce_mean(loss)
+    return loss
 
+class SelfCriticalLoss(BaseLoss):
+  def __init__(self):
+    self.cider_scorer = tf_cider.CiderScorer()
 
-class MultiTaskIOULoss(MultiTaskLoss):
-  """Calculate the loss between the predictions and labels.
-  """
-  def calculate_loss(self, predictions, support_predictions, labels, **unused_params):
-    support_labels = self.get_support(labels, support_type=FLAGS.support_type)
-    iou_loss_fn = IOULoss()
-    print >> sys.stderr, predictions, labels
-    iou_loss = iou_loss_fn.calculate_loss(predictions, labels, **unused_params)
-    iou_loss2 = iou_loss_fn.calculate_loss(support_predictions, support_labels, **unused_params)
-    return iou_loss * (1.0 - FLAGS.support_loss_percent) + iou_loss2 * FLAGS.support_loss_percent
+  def calculate_loss(self,
+                     target_caption_words, 
+                     target_caption_lengths, 
+                     greedy_caption_words, 
+                     greedy_caption_lengths, 
+                     sample_caption_words, 
+                     sample_caption_lengths, 
+                     sample_caption_logits, 
+                     epsilon=1e-9, **unused_params):
 
+    cider_scorer = self.cider_scorer
 
-class MultiTaskIOUCrossEntropyLoss(MultiTaskLoss):
-  """Calculate the loss between the predictions and labels.
-  """
-  def calculate_loss(self, predictions, support_predictions, labels, **unused_params):
-    support_labels = self.get_support(labels, support_type=FLAGS.support_type)
-    iou_loss_fn = IOUCrossEntropyLoss()
-    print >> sys.stderr, predictions, labels
-    iou_loss = iou_loss_fn.calculate_loss(predictions, labels, **unused_params)
-    iou_loss2 = iou_loss_fn.calculate_loss(support_predictions, support_labels, **unused_params)
-    return iou_loss * (1.0 - FLAGS.support_loss_percent) + iou_loss2 * FLAGS.support_loss_percent
+    log_tensor("greedy_caption_words", l=locals())
+    log_tensor("greedy_caption_lengths", l=locals())
+    log_tensor("sample_caption_logits", l=locals())
+    log_tensor("sample_caption_words", l=locals())
+    log_tensor("sample_caption_lengths", l=locals())
+    log_tensor("target_caption_words", l=locals())
+    log_tensor("target_caption_lengths", l=locals())
+
+    greedy_score = cider_scorer.score(greedy_caption_words,
+                                      greedy_caption_lengths,
+                                      target_caption_words,
+                                      target_caption_lengths)
+    sample_score = cider_scorer.score(sample_caption_words,
+                                      sample_caption_lengths,
+                                      target_caption_words,
+                                      target_caption_lengths)
+
+    tf.summary.scalar("losses/average_greedy_score", tf.reduce_mean(greedy_score))
+    tf.summary.scalar("losses/average_sample_score", tf.reduce_mean(sample_score))
+    tf.summary.histogram("losses/greedy_score", greedy_score)
+    tf.summary.histogram("losses/sample_score", sample_score)
+    tf.summary.histogram("losses/greedy_caption_lengths", greedy_caption_lengths)
+    tf.summary.histogram("losses/sample_caption_lengths", sample_caption_lengths)
+
+    # reward = -1 * reward
+    reward = greedy_score - sample_score
+    reward = tf.stop_gradient(reward)
+
+    # extract the logprobs of each word in sample_captions
+    sample_probs = tf.nn.softmax(sample_caption_logits)
+
+    # get sample_probs of every 
+    batch_size, max_sample_length, _ = sample_probs.get_shape().as_list()
+    sample_caption_mask = tf.sequence_mask(sample_caption_lengths, 
+                                           maxlen=max_sample_length)
+    sample_caption_mask = tf.cast(sample_caption_mask, dtype=tf.float32)
+    sample_batch_index = tf.tile(tf.reshape(tf.range(0, batch_size), 
+                                            shape=[batch_size,1]), 
+                                 multiples=[1, max_sample_length])
+    sample_seq_index = tf.tile(tf.reshape(tf.range(0, max_sample_length), 
+                                          shape=[1, max_sample_length]), 
+                               multiples=[batch_size, 1])
+    sample_gather_index = tf.stack([sample_batch_index, 
+                                    sample_seq_index, 
+                                    sample_caption_words], axis=2)
+
+    sample_caption_probs = tf.gather_nd(sample_probs, sample_gather_index)
+
+    rl_loss = tf.expand_dims(reward, 1) * tf.log(sample_caption_probs)
+    rl_loss = tf.div(tf.reduce_sum(rl_loss * sample_caption_mask),
+                     tf.reduce_sum(sample_caption_mask),
+                     name="rl_loss")
+    tf.summary.scalar("losses/rl_loss", rl_loss)
+
+    log_tensor("reward", l=locals())
+    log_tensor("sample_probs", l=locals())
+    log_tensor("sample_batch_index", l=locals())
+    log_tensor("sample_seq_index", l=locals())
+    log_tensor("sample_gather_index", l=locals())
+    log_tensor("sample_caption_probs", l=locals())
+    log_tensor("rl_loss", l=locals())
+    return rl_loss
 
 

@@ -26,9 +26,11 @@ from __future__ import print_function
 import tensorflow as tf
 import im2txt_models
 
+import losses
+import readers
 from train_utils import image_embedding
-from train_utils import image_processing
-from train_utils import inputs as input_ops
+from train_utils.image_processing import simple_process_image
+from train_utils.inputs import get_attributes_target, get_images_and_captions, caption_to_multi_labels
 
 tf.flags.DEFINE_string("model", "ShowAndTellModel",
                         "The model.")
@@ -41,6 +43,13 @@ tf.flags.DEFINE_integer("vocab_size", 12000,
                         " value less than the actual vocab size will result in an error.")
 tf.flags.DEFINE_integer("embedding_size", 512,
                         "Word embedding dimension.")
+
+tf.flags.DEFINE_string("reader", "OriginalReader",
+                        "The originalReader, other options are: LocalizationReader.")
+tf.flags.DEFINE_boolean("multiple_references", False,
+                        "For RL training, set it to True")
+tf.flags.DEFINE_boolean("cropping_images", True,
+                       "If you use the localization data, turn it off")
 
 tf.flags.DEFINE_string("image_format", "jpeg",
                         "Image format: jpeg or png.")
@@ -63,6 +72,8 @@ tf.flags.DEFINE_integer("image_height", 299,
                         "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_integer("image_width", 299,
                         "Dimensions of Inception v3 input images.")
+tf.flags.DEFINE_integer("image_channel", 3,
+                        "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_float("initializer_scale", 0.08,
                         "Scale used to initialize model variables.")
 tf.flags.DEFINE_boolean("support_ingraph", False,
@@ -78,6 +89,27 @@ tf.flags.DEFINE_boolean("inception_return_tuple", False,
 tf.flags.DEFINE_boolean("yet_another_inception", False,
                         "If set true, return two inception output. See image_embedding for details.")
 
+# semantic attention config
+tf.flags.DEFINE_boolean("only_attributes_loss", False,
+                        "Train only use aux_loss or not.")
+tf.flags.DEFINE_string("vocab_file", "",
+                       "Text file containing the vocabulary.")
+
+# reinforcement learning config
+tf.flags.DEFINE_boolean("rl_training", False,
+                        "Train with reinforcement learning.")
+tf.flags.DEFINE_boolean("rl_training_along_with_mle", False,
+                        "Train with reinforcement learning with the mle (need to use it along with rl_training).")
+tf.flags.DEFINE_string("rl_training_loss", "SelfCriticalLoss",
+                        "Type of loss in reinforcement learning.")
+tf.flags.DEFINE_integer("max_ref_length", 30, "Max reference length.")
+
+# image config
+tf.flags.DEFINE_boolean("l2_normalize_image", False,
+                        "Normalize image.")
+tf.flags.DEFINE_boolean("localization_attention", False,
+                        "Localization attention.")
+
 FLAGS = tf.app.flags.FLAGS
 
 
@@ -86,6 +118,29 @@ def find_class_by_name(name, modules):
   modules = [getattr(module, name, None) for module in modules]
   return next(a for a in modules if a)
 
+def get_shape_as_list(tensor):
+  return tensor.get_shape().as_list()
+
+def get_rank(tensor):
+  return len(get_shape_as_list(tensor))
+
+# padd or truncate the given axis of tensor to max_length
+def pad_or_truncate(tensor, lengths, axis, max_length):
+  shape = tensor.get_shape().as_list()
+  real_shape = tf.shape(tensor)
+  target_shape = [l for l in shape]
+  target_shape[axis] = max_length
+
+  left_padding, right_padding = [0] * len(shape), [0] * len(shape)
+  right_padding[axis] = tf.maximum(max_length - real_shape[axis], 0)
+  padded_tensor = tf.pad(tensor, zip(left_padding, right_padding))
+  sliced_tensor = tf.slice(padded_tensor, [0] * len(shape), target_shape)
+  if lengths is not None:
+    clipped_lengths = tf.minimum(lengths, max_length)
+  else:
+    clipped_lengths = None
+  return sliced_tensor, clipped_lengths
+  
 
 class Im2TxtModel(object):
   """Image-to-text implementation"""
@@ -98,9 +153,6 @@ class Im2TxtModel(object):
     """
     assert mode in ["train", "inference"]
     self.mode = mode
-
-    # Reader for the input data.
-    self.reader = tf.TFRecordReader()
 
     # To match the "Show and Tell" paper we initialize all variables with a
     # random uniform initializer.
@@ -132,6 +184,9 @@ class Im2TxtModel(object):
     # A float32 Tensor with shape [batch_size * padded_length].
     self.target_cross_entropy_loss_weights = None
 
+    # localization boxes
+    self.localizations = None
+
     # Collection of variables from the inception submodel.
     self.inception_variables = []
     self.ya_inception_variables = []
@@ -149,25 +204,6 @@ class Im2TxtModel(object):
     """Returns true if the model is built for training mode."""
     return self.mode == "train"
 
-  def process_image(self, encoded_image, thread_id=0, flip=False):
-    """Decodes and processes an image string.
-
-    Args:
-      encoded_image: A scalar string Tensor; the encoded image.
-      thread_id: Preprocessing thread id used to select the ordering of color
-        distortions.
-
-    Returns:
-      A float32 Tensor of shape [height, width, 3]; the processed image.
-    """
-    return image_processing.process_image(encoded_image,
-                                          is_training=self.is_training(),
-                                          height=FLAGS.image_height,
-                                          width=FLAGS.image_width,
-                                          thread_id=thread_id,
-                                          image_format=FLAGS.image_format,
-                                          flip=flip)
-
   def build_inputs(self):
     """Input prefetching, preprocessing and batching.
 
@@ -177,71 +213,47 @@ class Im2TxtModel(object):
       self.target_seqs (training and eval only)
       self.input_mask (training and eval only)
     """
-    if self.mode == "inference":
-      # In inference mode, images and inputs are fed via placeholders.
-      image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
-      input_feed = tf.placeholder(dtype=tf.int64,
-                                  shape=[None],  # batch_size
-                                  name="input_feed")
+    if FLAGS.reader == "OriginalReader":
+      if self.mode == "inference":
+        # In inference mode, images and inputs are fed via placeholders.
+        image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
+        input_feed = tf.placeholder(dtype=tf.int64,
+                                    shape=[None],  # batch_size
+                                    name="input_feed")
 
-      # Process image and insert batch dimensions.
-      images = tf.expand_dims(self.process_image(image_feed), 0)
-      input_seqs = tf.expand_dims(input_feed, 1)
+        # Process image and insert batch dimensions.
+        images = tf.expand_dims(simple_process_image(image_feed), 0)
+        input_seqs = tf.expand_dims(input_feed, 1)
 
-      # No target sequences or input mask in inference mode.
-      target_seqs = None
-      input_mask = None
-    else:
-      # Prefetch serialized SequenceExample protos.
-      input_queue = input_ops.prefetch_input_data(
-          self.reader,
-          FLAGS.input_file_pattern,
-          is_training=self.is_training(),
-          batch_size=FLAGS.batch_size,
-          values_per_shard=FLAGS.values_per_input_shard,
-          input_queue_capacity_factor=FLAGS.input_queue_capacity_factor,
-          num_reader_threads=FLAGS.num_input_reader_threads)
-
-      # Image processing and random distortion. Split across multiple threads
-      # with each thread applying a slightly different distortion.
-      assert FLAGS.num_preprocess_threads % 2 == 0
-      images_and_captions = []
-      for thread_id in range(FLAGS.num_preprocess_threads):
-        serialized_sequence_example = input_queue.dequeue()
-        if FLAGS.support_flip:
-          encoded_image, caption, flip_caption = input_ops.parse_sequence_example(
-              serialized_sequence_example,
-              image_feature=FLAGS.image_feature_name,
-              caption_feature=FLAGS.caption_feature_name,
-              flip_caption_feature=FLAGS.flip_caption_feature_name)
-          # random decides flip or not
-          flip_image = self.process_image(encoded_image, thread_id=thread_id, flip=True)
-          image = self.process_image(encoded_image, thread_id=thread_id)
-          maybe_flip_image, maybe_flip_caption = tf.cond(
-            tf.less(tf.random_uniform([],0,1.0), 0.5), 
-            lambda: [flip_image, flip_caption], 
-            lambda: [image, caption])
-          images_and_captions.append([maybe_flip_image, maybe_flip_caption])
-        else:
-          encoded_image, caption, _ = input_ops.parse_sequence_example(
-              serialized_sequence_example,
-              image_feature=FLAGS.image_feature_name,
-              caption_feature=FLAGS.caption_feature_name)
-          image = self.process_image(encoded_image, thread_id=thread_id)
-          images_and_captions.append([image, caption])
-
-      # Batch inputs.
-      queue_capacity = (2 * FLAGS.num_preprocess_threads *
-                        FLAGS.batch_size)
-      images, input_seqs, target_seqs, input_mask = (
-          input_ops.batch_with_dynamic_pad(images_and_captions,
-                                           batch_size=FLAGS.batch_size,
-                                           queue_capacity=queue_capacity))
+        # No target sequences or input mask in inference mode.
+        target_seqs = None
+        input_mask = None
+      else:
+        images, input_seqs, target_seqs, input_mask = get_images_and_captions(is_training=self.is_training)
+      if self.mode == "inference":
+        target_lengths = None
+      else:
+        target_lengths = tf.reduce_sum(input_mask, -1)
+    elif FLAGS.reader == "ImageCaptionReader":
+      reader = readers.ImageCaptionReader(num_refs=FLAGS.num_refs,
+                                  max_ref_length=FLAGS.max_ref_length)
+      cols = readers.get_input_data_tensors(reader,
+                                    data_pattern=FLAGS.input_file_pattern,
+                                    batch_size=FLAGS.batch_size,
+                                    num_epochs=None,
+                                    is_training=True,
+                                    num_readers=4)
+      if FLAGS.localization_attention:
+        images, input_seqs, target_seqs, input_mask, target_lengths, localizations = cols
+        self.localizations = localizations
+      else:
+        images, input_seqs, target_seqs, input_mask, target_lengths = cols
 
     self.images = images
     self.input_seqs = input_seqs
     self.target_seqs = target_seqs
     self.input_mask = input_mask
+    self.target_lengths = target_lengths
 
   def get_image_output(self):
     """Builds the image model subgraph and generates image embeddings.
@@ -262,7 +274,8 @@ class Im2TxtModel(object):
         trainable=trainable,
         is_training=self.is_training(),
         use_box=FLAGS.use_box,
-        inception_return_tuple=FLAGS.inception_return_tuple)
+        inception_return_tuple=FLAGS.inception_return_tuple,
+        localizations=self.localizations)
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
 
@@ -273,7 +286,8 @@ class Im2TxtModel(object):
           scope="ya_InceptionV3",
           is_training=self.is_training(),
           use_box=FLAGS.use_box,
-          inception_return_tuple=FLAGS.inception_return_tuple)
+          inception_return_tuple=FLAGS.inception_return_tuple,
+          localizations=self.localizations)
       self.ya_inception_variables = {v.op.name.lstrip("ya_"): v for v in 
             tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope="ya_InceptionV3")}
 
@@ -306,13 +320,14 @@ class Im2TxtModel(object):
 
     # model
     outputs = caption_model.create_model(
-          input_seqs = self.input_seqs, 
+          input_seqs = self.input_seqs,
           image_model_output = self.image_model_output,
           initializer = self.initializer,
           mode = self.mode,
           target_seqs = self.target_seqs,
           global_step = self.global_step,
-          input_mask = self.input_mask)
+          input_mask = self.input_mask,
+          target_lengths = self.target_lengths)
 
     # loss
     if self.mode == "inference":
@@ -321,78 +336,140 @@ class Im2TxtModel(object):
       elif "bs_results" in outputs:
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
-      
+        if "bs_results_lengths" in outputs:
+          self.predicted_ids_lengths = outputs["bs_results_lengths"]
       if "top_n_attributes" in outputs:
         self.top_n_attributes = outputs["top_n_attributes"]
     else:
-      logits = outputs["logits"]
-      targets = tf.reshape(self.target_seqs, [-1])
-      weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+      if "mle_caption_logits" in outputs:
+        logits = tf.reshape(outputs["mle_caption_logits"], [-1, FLAGS.vocab_size])
+        targets = tf.reshape(self.target_seqs, [-1])
+        weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
 
-      # multi-label-loss 
-      if "attributes_logits" in outputs and "attributes_mask" in outputs:
-        attributes_logits = outputs["attributes_logits"]
-        attributes_mask = outputs["attributes_mask"]
-        attributes_targets = input_ops.get_attributes_target(self.target_seqs, attributes_mask)
+        # Compute losses.
+        mle_loss_fn = losses.SparseSoftmaxCrossEntropyLoss()
+        mle_loss = mle_loss_fn.calculate_loss(logits, targets, weights)
 
-        attributes_loss = tf.nn.sigmoid_cross_entropy_with_logits(
-          labels=attributes_targets,
-          logits=attributes_logits)
+        # Logging losses.
+        tf.summary.scalar("losses/mle_loss", mle_loss)
+        tf.losses.add_loss(mle_loss)
 
-        if FLAGS.use_idf_weighted_attribute_loss:
-          attributes_loss_mask = outputs["idf_weighted_mask"]
-        else:
-          attributes_loss_mask = attributes_mask
-        attributes_loss = tf.div(tf.reduce_sum(tf.multiply(attributes_loss, attributes_loss_mask)),
-                                 tf.reduce_sum(attributes_loss_mask),
-                                 name="attributes_loss")
+      # caption loss
+      if FLAGS.rl_training == True:
+        # rl loss
+        # load greed caption and sample caption to calculate reward
+        target_caption_words = self.target_seqs
+        target_caption_lengths = self.target_lengths
+        greedy_caption_words = outputs["greedy_caption_words"]
+        greedy_caption_lengths = outputs["greedy_caption_lengths"]
+        sample_caption_logits = outputs["sample_caption_logits"]
+        sample_caption_words = outputs["sample_caption_words"]
+        sample_caption_lengths = outputs["sample_caption_lengths"]
 
-        tf.losses.add_loss(attributes_loss)
-        tf.summary.scalar("losses/attributes_loss", attributes_loss)
-        self.attributes_loss = attributes_loss
+        if get_rank(target_caption_words) == 2:
+          target_caption_words = tf.expand_dims(target_caption_words, 1)
+        if get_rank(target_caption_lengths) == 1:
+          target_caption_lengths = tf.expand_dims(target_caption_lengths, 1)
 
-      # discriminative loss
-      # should be multi-label margin loss, but the loss below is a little different
-      if "discriminative_logits" in outputs:
-        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
-        discriminative_loss = tf.losses.hinge_loss(labels=word_labels,
-                                                   logits=outputs["discriminative_logits"],
-                                                   weights=FLAGS.discriminative_loss_weights)
-        tf.summary.scalar("losses/discriminative_loss", discriminative_loss)
-        self.discriminative_loss = discriminative_loss
+        if get_shape_as_list(target_caption_words)[-1] is None:
+          target_caption_words, target_caption_lengths = \
+              pad_or_truncate(target_caption_words, target_caption_lengths,
+                              axis = -1, max_length = FLAGS.max_caption_length)
+        if get_shape_as_list(greedy_caption_words)[-1] is None:
+          greedy_caption_words, greedy_caption_lengths = \
+              pad_or_truncate(greedy_caption_words, greedy_caption_lengths,
+                              axis = -1, max_length = FLAGS.max_caption_length)
+        if get_shape_as_list(sample_caption_logits)[1] is None:
+          sample_caption_logits, _ = \
+              pad_or_truncate(sample_caption_logits, sample_caption_lengths,
+                              axis = 1, max_length = FLAGS.max_ref_length)
+        if get_shape_as_list(sample_caption_words)[-1] is None:
+          sample_caption_words, sample_caption_lengths = \
+              pad_or_truncate(sample_caption_words, sample_caption_lengths,
+                              axis = -1, max_length = FLAGS.max_ref_length)
+
+        rl_loss_cls = find_class_by_name(FLAGS.rl_training_loss, [losses])
+        rl_loss_fn = rl_loss_cls()
+        rl_loss = rl_loss_fn.calculate_loss(
+                     target_caption_words   = target_caption_words, 
+                     target_caption_lengths = target_caption_lengths, 
+                     greedy_caption_words   = greedy_caption_words, 
+                     greedy_caption_lengths = greedy_caption_lengths, 
+                     sample_caption_words   = sample_caption_words, 
+                     sample_caption_lengths = sample_caption_lengths, 
+                     sample_caption_logits  = sample_caption_logits
+                  )
+
+        tf.losses.add_loss(rl_loss)
+
+      else:
+        if "logits" in outputs:
+          # prepare logits, targets and weight
+          logits = outputs["logits"]
+          logits = tf.reshape(logits, [FLAGS.batch_size, -1, FLAGS.vocab_size])
+          logits, _ = pad_or_truncate(logits, None, axis=1, max_length=FLAGS.max_ref_length)
+          logits = tf.reshape(logits, [-1, FLAGS.vocab_size])
+          targets = tf.reshape(self.target_seqs, [-1])
+          weights = tf.to_float(tf.reshape(self.input_mask, [-1]))
+
+          # Compute losses.
+          loss_fn = losses.SparseSoftmaxCrossEntropyLoss()
+          batch_loss = loss_fn.calculate_loss(logits, targets, weights)
+
+          # Logging losses.
+          tf.summary.scalar("losses/batch_loss", batch_loss)
+          tf.losses.add_loss(batch_loss)
+
+          self.target_cross_entropy_losses = batch_loss # Used in evaluation.
+          self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
+
+        # multi-label-loss
+        if "attributes_logits" in outputs and "attributes_mask" in outputs:
+          attributes_logits = outputs["attributes_logits"]
+          attributes_targets = get_attributes_target(self.target_seqs, attributes_mask)
+          if FLAGS.use_idf_weighted_attribute_loss:
+            attributes_mask = outputs["idf_weighted_mask"]
+          else:
+            attributes_mask = outputs["attributes_mask"]
+
+          attributes_loss_fn = losses.CrossEntropyLoss()
+          attributes_loss = attributes_loss_fn.calculate_loss(
+                                    attributes_logits, attributes_targets,
+                                    attributes_mask)
+
+          tf.losses.add_loss(attributes_loss)
+          tf.summary.scalar("losses/attributes_loss", attributes_loss)
+          self.attributes_loss = attributes_loss
 
 
-      # Compute losses.
-      losses = tf.nn.sparse_softmax_cross_entropy_with_logits(labels=targets,
-                                                              logits=logits)
-      batch_loss = tf.div(tf.reduce_sum(tf.multiply(losses, weights)),
-                          tf.reduce_sum(weights),
-                          name="batch_loss")
-      tf.losses.add_loss(batch_loss)
+        # discriminative loss
+        # should be multi-label margin loss, but the loss below is a little different
+        if "discriminative_logits" in outputs:
+          word_labels = caption_to_multi_labels(self.target_seqs)
+          discriminative_loss = tf.losses.hinge_loss(labels=word_labels,
+                                                     logits=outputs["discriminative_logits"],
+                                                     weights=FLAGS.discriminative_loss_weights)
+          tf.summary.scalar("losses/discriminative_loss", discriminative_loss)
+          self.discriminative_loss = discriminative_loss
 
-      if "word_predictions" in outputs:
-        word_predictions = outputs["word_predictions"]
-        word_labels = input_ops.caption_to_multi_labels(self.target_seqs)
-        word_loss = tf.nn.sigmoid_cross_entropy_with_logits(labels=word_labels,
-                                                            logits=word_predictions)
-        word_loss = tf.div(tf.reduce_sum(word_loss), 
-                           reduce(lambda x,y: x*y, word_loss.get_shape().as_list()),
-                           name="word_loss")
-        tf.losses.add_loss(word_loss)
-        tf.summary.scalar("losses/word_loss", word_loss)
-        self.word_loss = word_loss
+
+        # word weighted cross entropy loss
+        if "word_predictions" in outputs:
+          word_loss_fn = losses.CrossEntropyLoss()
+          word_loss = word_loss_fn.calculate_loss(outputs["word_predictions"],
+                                                  caption_to_multi_labels(self.target_seqs))
+          tf.summary.scalar("losses/word_loss", word_loss)
+          tf.losses.add_loss(word_loss)
+          self.word_loss = word_loss
 
       total_loss = tf.losses.get_total_loss()
 
       # Add summaries.
-      tf.summary.scalar("losses/batch_loss", batch_loss)
       tf.summary.scalar("losses/total_loss", total_loss)
       for var in tf.trainable_variables():
         tf.summary.histogram("parameters/" + var.op.name, var)
 
       self.total_loss = total_loss
-      self.target_cross_entropy_losses = losses  # Used in evaluation.
-      self.target_cross_entropy_loss_weights = weights  # Used in evaluation.
 
   def setup_inception_initializer(self):
     """Sets up the function to restore inception variables from checkpoint."""
