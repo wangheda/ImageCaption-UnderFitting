@@ -24,8 +24,40 @@ import tensorflow as tf
 
 from tensorflow.contrib.slim.python.slim.nets.inception_v3 import inception_v3_base
 
+FLAGS = tf.flags.FLAGS
 slim = tf.contrib.slim
 
+def localization_attentions(net, localizations):
+  print(net)
+  image_shape = net.get_shape().as_list()
+  print(image_shape)
+  loc_shape = localizations.get_shape().as_list()
+  h, w = image_shape[1:3]
+  l1 = tf.floor(tf.multiply(localizations[:,:,0], float(w) / float(FLAGS.image_width)))
+  u1 = tf.floor(tf.multiply(localizations[:,:,1], float(h) / float(FLAGS.image_height)))
+  l2 = tf.ceil(tf.multiply(localizations[:,:,2], float(w) / float(FLAGS.image_width)))
+  u2 = tf.ceil(tf.multiply(localizations[:,:,3], float(h) / float(FLAGS.image_height)))
+  l1, u1, l2, u2 = map(lambda x: tf.cast(x, dtype=tf.int32), [l1, u1, l2, u2])
+
+  idx_u = tf.reshape(tf.range(0, h, dtype=tf.int32), shape=[h, 1])
+  idx_l = tf.reshape(tf.range(0, w, dtype=tf.int32), shape=[1, w])
+  masks = []
+  for i in xrange(image_shape[0]):
+    mask = []
+    for j in xrange(loc_shape[1]):
+      m = tf.logical_and(tf.logical_and(idx_u >= u1[i,j], idx_u < u2[i,j]),
+                         tf.logical_and(idx_l >= l1[i,j], idx_l < l2[i,j]))
+      m = tf.cast(m, tf.float32)
+      m = tf.multiply(m, 1.0 / (tf.reduce_sum(m) + 1e-9))
+      mask.append(m)
+    mask = tf.stack(mask, axis=0)
+    masks.append(mask)
+  masks = tf.stack(masks, axis=0)
+  masks = tf.stop_gradient(masks)
+
+  features = tf.einsum("ijkl,imjk->iml", net, masks)
+  print(features)
+  return features
 
 def inception_v3(images,
                  trainable=True,
@@ -38,7 +70,8 @@ def inception_v3(images,
                  add_summaries=True,
                  scope="InceptionV3",
                  use_box=False,
-                 inception_return_tuple=False):
+                 inception_return_tuple=False,
+                 localizations=None):
   """Builds an Inception V3 subgraph for image embeddings.
 
   Args:
@@ -103,9 +136,16 @@ def inception_v3(images,
           shape = net.get_shape()
           print(net.get_shape().as_list())
           if inception_return_tuple:
-            original_net = tf.reshape(net, [tf.cast(shape[0],tf.int32), tf.cast(shape[1]*shape[2],tf.int32), tf.cast(shape[3],tf.int32)])
-            net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
+            if FLAGS.localization_attention:
+              net = localization_attentions(net, localizations)
+              original_net = net
+              net = tf.reduce_mean(net, axis=1)
+            else:
+              original_net = tf.reshape(net, [tf.cast(shape[0],tf.int32), tf.cast(shape[1]*shape[2],tf.int32), tf.cast(shape[3],tf.int32)])
+              net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
           elif use_box:
+            if FLAGS.localization_attention:
+              net = localization_attentions(net, localizations)
             net = tf.reshape(net, [tf.cast(shape[0],tf.int32), tf.cast(shape[1]*shape[2],tf.int32), tf.cast(shape[3],tf.int32)])
           else:
             net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool")
