@@ -47,6 +47,8 @@ tf.flags.DEFINE_integer("num_examples_per_epoch", 210000,
                         "Number of examples per epoch of training data.")
 tf.flags.DEFINE_string("optimizer", "SGD",
                         "Optimizer for training the model.")
+tf.flags.DEFINE_float("optimizer_momentum", 0.9,
+                        "Optimizer for training the model.")
 tf.flags.DEFINE_float("initial_learning_rate", 2.0,
                         "Learning rate for the initial phase of training.")
 tf.flags.DEFINE_float("learning_rate_decay_factor", 0.5,
@@ -118,13 +120,24 @@ def main(unused_argv):
       loss = model.attributes_loss
     else:
       loss = model.total_loss
-    train_op = tf.contrib.layers.optimize_loss(
-        loss=loss,
-        global_step=model.global_step,
-        learning_rate=learning_rate,
-        optimizer=FLAGS.optimizer,
-        clip_gradients=FLAGS.clip_gradients,
-        learning_rate_decay_fn=learning_rate_decay_fn)
+
+    if FLAGS.optimizer == "Momentum":
+      momentum = FLAGS.optimizer_momentum
+      train_op = tf.contrib.layers.optimize_loss(
+          loss=loss,
+          global_step=model.global_step,
+          learning_rate=learning_rate,
+          optimizer=lambda lr: tf.train.MomentumOptimizer(lr, momentum=momentum),
+          clip_gradients=FLAGS.clip_gradients,
+          learning_rate_decay_fn=learning_rate_decay_fn)
+    else:
+      train_op = tf.contrib.layers.optimize_loss(
+          loss=loss,
+          global_step=model.global_step,
+          learning_rate=learning_rate,
+          optimizer=FLAGS.optimizer,
+          clip_gradients=FLAGS.clip_gradients,
+          learning_rate_decay_fn=learning_rate_decay_fn)
 
 
     local_init_op = tf.contrib.slim.learning._USE_DEFAULT
