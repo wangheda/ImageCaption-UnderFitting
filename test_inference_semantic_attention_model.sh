@@ -2,7 +2,7 @@
 
 model_name="semantic_attention_model_join"
 #ckpt=520000
-ckpt=122536
+ckpt=800000
 device=""
 
 # the script directory

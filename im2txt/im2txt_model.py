@@ -231,9 +231,9 @@ class Im2TxtModel(object):
       else:
         images, input_seqs, target_seqs, input_mask = get_images_and_captions(is_training=self.is_training)
       if self.mode == "inference":
-        self.target_lengths = None
+        target_lengths = None
       else:
-        self.target_lengths = tf.reduce_sum(input_mask, -1)
+        target_lengths = tf.reduce_sum(input_mask, -1)
     elif FLAGS.reader == "ImageCaptionReader":
       reader = readers.ImageCaptionReader(num_refs=FLAGS.num_refs,
                                   max_ref_length=FLAGS.max_ref_length)
@@ -336,6 +336,8 @@ class Im2TxtModel(object):
       elif "bs_results" in outputs:
         self.predicted_ids = outputs["bs_results"].predicted_ids
         self.scores = outputs["bs_results"].beam_search_decoder_output.scores
+        if "bs_results_lengths" in outputs:
+          self.predicted_ids_lengths = outputs["bs_results_lengths"]
       if "top_n_attributes" in outputs:
         self.top_n_attributes = outputs["top_n_attributes"]
     else:
