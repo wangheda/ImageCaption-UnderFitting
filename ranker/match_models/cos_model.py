@@ -21,12 +21,16 @@ def get_shape(tensor):
 
 
 def cosine_distance(tensor1, tensor2, axis=1):
+  """
   dot_product = tf.reduce_mean(tensor1 * tensor2, axis=axis, keep_dims=True)
   length1 = tf.sqrt(tf.reduce_mean(tensor1 * tensor1, axis=axis, keep_dims=True))
   length2 = tf.sqrt(tf.reduce_mean(tensor2 * tensor2, axis=axis, keep_dims=True))
   length = length1 * length2 + 1e-9
   return dot_product / length
-
+  """
+  normalized_t1 = tf.nn.l2_normalize(tensor1, dim=axis)
+  normalized_t2 = tf.nn.l2_normalize(tensor2, dim=axis)
+  return tf.reduce_sum(normalized_t1 * normalized_t2, axis=axis)
 
 class CosModel(object):
 
