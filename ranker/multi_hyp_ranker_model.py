@@ -56,6 +56,8 @@ tf.flags.DEFINE_integer("image_height", 299,
                         "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_integer("image_width", 299,
                         "Dimensions of Inception v3 input images.")
+tf.flags.DEFINE_integer("image_channel", 3,
+                        "Dimensions of Inception v3 input images.")
 tf.flags.DEFINE_float("initializer_scale", 0.08,
                         "Scale used to initialize model variables.")
 
@@ -99,10 +101,10 @@ class RankerModel(object):
     # A float32 Tensor with shape [batch_size, image_model_dim].
     self.image_model_output= None
 
-    # A float32 Tensor with shape [2*batch_size, text_model_dim].
+    # A float32 Tensor with shape [batch_size, lines_per_image, text_model_dim].
     self.text_model_output= None
 
-    # A float32 Tensor with shape [2*batch_size].
+    # A float32 Tensor with shape [batch_size, lines_per_image].
     self.match_model_output= None
 
     # A float32 scalar Tensor; the total loss for the trainer to optimize.
@@ -152,6 +154,10 @@ class RankerModel(object):
                                  num_readers=FLAGS.num_readers)
 
     self.batch_size = FLAGS.batch_size
+    batch_size, hyp_num, max_len = captions.shape.as_list()
+    self.hyp_num = hyp_num
+    self.max_len = max_len
+
     self.image_ids = image_ids
     self.images = images
     self.captions = captions
@@ -173,12 +179,26 @@ class RankerModel(object):
     self.inception_variables = tf.get_collection(
         tf.GraphKeys.GLOBAL_VARIABLES, scope="InceptionV3")
 
-    if self.mode == "train":
-      self.image_model_output = magic_concat(inception_output)
-    else:
-      self.image_model_output = inception_output
+    # inception_outputs: ([batch_size, feature_size], [batch_size, pos_num, feature_size])
+    # tile to ([batch_size * hyp_num, feature_size], [batch_size * hyp_num, pos_num, feature_size])
+    if type(inception_output) in [list, tuple]:
+      image_model_output, middle_layer = inception_output
+      batch_size, feature_size = image_model_output.shape.as_list()
+      image_model_output = tf.tile(tf.expand_dims(image_model_output,1), [1, self.hyp_num, 1])
+      image_model_output = tf.reshape(image_model_output, shape=[batch_size*self.hyp_num, feature_size])
 
-    print(self.image_model_output)
+      batch_size, pos_num, feature_size = middle_layer.shape.as_list()
+      middle_layer = tf.tile(tf.expand_dims(middle_layer,1), [1, self.hyp_num, 1, 1])
+      middle_layer = tf.reshape(middle_layer, shape=[batch_size*self.hyp_num, pos_num,  feature_size])
+
+      self.image_model_output = (image_model_output, middle_layer)
+    else:
+      batch_size, feature_size = image_model_output.shape.as_list()
+      image_model_output = tf.tile(tf.expand_dims(image_model_output,1), [1, self.hyp_num, 1])
+      image_model_output = tf.reshape(image_model_output, shape=[batch_size*self.hyp_num, feature_size])
+      self.image_model_output = image_model_output
+
+    print("image output:", self.image_model_output)
 
 
   def get_text_output(self):
@@ -186,19 +206,29 @@ class RankerModel(object):
     text_model_fn = find_class_by_name(FLAGS.text_model, [text_models])
     text_model = text_model_fn()
 
-    if self.mode == "train":
-      self.captions = tf.concat([self.pos_captions, self.neg_captions], axis=0)
-      self.seqlens = tf.concat([self.pos_seqlens, self.neg_seqlens], axis=0)
+    batch_size, hyp_num, max_len = self.captions.shape.as_list()
 
     text_output = text_model.create_model(
-          captions = self.captions, 
-          seqlens = self.seqlens,
+          captions = tf.reshape(self.captions, shape=[batch_size * hyp_num, max_len]),
+          seqlens = tf.reshape(self.seqlens, shape=[batch_size * hyp_num]),
           global_step = self.global_step,
           initializer = self.initializer,
           mode = self.mode)
-      
+    """
+    if type(text_output) in [list, tuple]:
+      text_output, sequence_layer = text_output
+      _, state_size = text_output.shape.as_list()
+      text_output = tf.reshape(text_output, shape=[batch_size, hyp_num, state_size])
+      _, seq_len, hidden_size = sequence_layer.shape.as_list()
+      sequence_layer = tf.reshape(sequence_layer, shape=[batch_size, hyp_num, seq_len, hidden_size])
+      self.text_model_output = zip(tf.unstack(text_output, axis=1), tf.unstack(sequence_layer, axis=1))
+    else:
+      _, state_size = text_output.shape.as_list()
+      text_output = tf.reshape(text_output, shape=[batch_size, hyp_num, state_size])
+      self.text_model_output = tf.unstack(text_output, axis=1) 
+    """
     self.text_model_output = text_output
-    
+    print("text output:", self.text_model_output) 
 
   def build_model(self):
 
@@ -206,43 +236,28 @@ class RankerModel(object):
     match_model = match_model_fn()
 
     # model
-    outputs = match_model.create_model(
-          image_input = self.image_model_output, 
-          text_input = self.text_model_output,
-          global_step = self.global_step,
-          initializer = self.initializer,
-          mode = self.mode)
-
+    outputs =  match_model.create_model(
+                  image_input = self.image_model_output, 
+                  text_input = self.text_model_output,
+                  global_step = self.global_step,
+                  initializer = self.initializer,
+                  mode = self.mode)
+    
+    outputs = tf.reshape(outputs, shape=[self.batch_size, self.hyp_num])
+    print("outputs:", outputs)
     # loss
     if self.mode == "inference":
       self.output_scores = outputs
     else:
       # Compute losses.
-      loss_fn = find_class_by_name(FLAGS.loss, [losses])
-      loss_obj = loss_fn()
-
-      if loss_obj.is_pairwise_loss():
-        pos_scores, neg_scores = tf.split(value=outputs,
-                                          num_or_size_splits=[self.batch_size, self.batch_size],
-                                          axis=0)
-
-        batch_loss = tf.identity(loss_obj.calculate_loss(
-                                    pos_scores=pos_scores,
-                                    neg_scores=neg_scores,
-                                    margin=FLAGS.hinge_loss_margin
-                                 ), name="batch_loss")
-        tf.losses.add_loss(batch_loss)
-      else: # point-wise loss
-        labels = tf.concat([
-                    tf.ones([self.batch_size, 1]),
-                    tf.zeros([self.batch_size, 1])
-                 ], axis=0)
-
-        batch_loss = tf.identity(loss_obj.calculate_loss(
-                                    predictions=outputs,
-                                    labels=labels,
-                                 ), name="batch_loss")
-        tf.losses.add_loss(batch_loss)
+      tf.summary.histogram("losses/output_scores", outputs)
+      target_scores = outputs[:,0] # the hyp is sorted
+      max_scores = tf.reduce_max(outputs[:,1:], axis=1)
+      print(target_scores, max_scores)
+      
+      loss = tf.maximum(0.0, FLAGS.hinge_loss_margin + max_scores - target_scores)
+      batch_loss = tf.reduce_mean(loss)
+      tf.losses.add_loss(batch_loss)
 
       # add auxiliary losses here
       # add auxiliary losses end

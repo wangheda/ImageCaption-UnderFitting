@@ -70,6 +70,8 @@ class ImageCaptionReader(BaseReader):
     print(" image_id", image_ids)
     """
     image_id = features["image/id"]
+    image_id = tf.reshape(image_id,
+                          shape=[1])
     print(" image_id", image_id)
     
 
@@ -88,6 +90,8 @@ class ImageCaptionReader(BaseReader):
                           is_training=True, 
                           height=FLAGS.image_height, 
                           width=FLAGS.image_width)
+    image = tf.reshape(image, 
+                      shape=[1, FLAGS.image_height, FLAGS.image_width, FLAGS.image_channel])
     print(" image", image)
 
     """
@@ -104,15 +108,15 @@ class ImageCaptionReader(BaseReader):
     """
 
     captions = tf.reshape(features["image/captions"], 
-                          shape=[self.lines_per_image, self.max_len])
+                          shape=[1, self.lines_per_image, self.max_len])
     seqlens = tf.reshape(features["image/seqlens"], 
-                         shape=[self.lines_per_image])
+                         shape=[1, self.lines_per_image])
     print(" captions", captions)
     print(" seqlens", seqlens)
 
     if self.mode == "train":
       scores = tf.reshape(features["image/scores"], 
-                         shape=[self.lines_per_image])
+                         shape=[1, self.lines_per_image])
     else:
       scores = None
 
