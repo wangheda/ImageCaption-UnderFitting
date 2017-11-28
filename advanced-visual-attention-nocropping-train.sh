@@ -5,7 +5,7 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 command="cmd:$1"
 
-device=0
+device=1
 model=ShowAndTellAdvancedModel
 model_dir_name=localization_attention_model
 

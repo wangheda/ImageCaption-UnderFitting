@@ -140,6 +140,37 @@ class CaptionGenerator(object):
     self.max_caption_length = max_caption_length
     self.length_normalization_factor = length_normalization_factor
 
+  def batched_beam_search(self, sess):
+    """Runs beam search caption generation on a single image.
+
+    Args:
+      sess: TensorFlow Session object.
+      encoded_image: An encoded image string.
+
+    Returns:
+      A list of Caption sorted by descending score.
+    """
+    predicted_ids, image_names, scores = sess.run([self.model.predicted_ids, 
+                                                   self.model.image_names,
+                                                   self.model.scores])
+    predicted_ids = np.transpose(predicted_ids, (0,2,1))   
+    scores = np.transpose(scores, (0,2,1))
+
+    final_captions = []
+    for captions in predicted_ids:
+      partial_captions = []
+      for caption in captions:
+        partial_caption = []
+        for word_id in caption:
+          if word_id != FLAGS.end_token:
+            if word_id >= 0 and word_id != FLAGS.start_token:
+              partial_caption.append(word_id)
+          else:
+            break
+        partial_captions.append(partial_caption)
+      final_captions.append(partial_captions)
+    return image_names, final_captions
+
   def beam_search(self, sess, encoded_image):
     """Runs beam search caption generation on a single image.
 

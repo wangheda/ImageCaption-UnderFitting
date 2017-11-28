@@ -75,7 +75,8 @@ class ShowAndTellAdvancedModel(object):
           lexical_embedding_map = tf.matmul(lexical_mapping, lexical_embedding)
           embedding_map = tf.concat([embedding_map, lexical_embedding_map], axis=1)
 
-      seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
+      if input_seqs is not None:
+        seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
 
     embedding_size = embedding_map.get_shape().as_list()[1]
     # Map image model output into embedding space.
