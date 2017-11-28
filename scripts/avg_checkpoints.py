@@ -100,7 +100,7 @@ def main(_):
   placeholders = [tf.placeholder(v.dtype, shape=v.shape) for v in tf_vars]
   assign_ops = [tf.assign(v, p) for (v, p) in zip(tf_vars, placeholders)]
   global_step = tf.Variable(
-      0, name="global_step", trainable=False, dtype=tf.int64)
+      0, name="global_step", trainable=False, dtype=tf.int32)
   saver = tf.train.Saver(tf.global_variables())
 
   # Build a model consisting only of variables, set them to the average values.
