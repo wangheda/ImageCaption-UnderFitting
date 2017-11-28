@@ -10,9 +10,9 @@ TFRECORD_DIR="${DIR}/data/New_Ranker_data/5170e21e04710bdcf3f85cffc39bee4d0acc0e
 MODEL_DIR="${DIR}/model"
 image_model=InceptionV3Model
 text_model=LstmModel
-match_model=MlpModel
+match_model=CosModel
 
-model_dir_name=multi_hyp_ranker_baseline_model
+model_dir_name=multi_hyp_ranker_cosine_model
 
 
 cd ranker && CUDA_VISIBLE_DEVICES=$device python train.py \
@@ -22,9 +22,6 @@ cd ranker && CUDA_VISIBLE_DEVICES=$device python train.py \
   --image_model=${image_model} \
   --text_model=${text_model} \
   --match_model=${match_model} \
-  --mlp_num_layers=2 \
-  --mlp_num_units="512,256" \
-  --mlp_type_activation="sigmoid" \
   --lstm_cell_type="highway" \
   --num_lstm_layers=2 \
   --train_inception_with_decay=True \
