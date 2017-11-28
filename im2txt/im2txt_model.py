@@ -258,9 +258,9 @@ class Im2TxtModel(object):
       if FLAGS.localization_attention:
         images, image_names, localizations = cols
         self.localizations = localizations
-        self.image_names = image_names
       else:
-        images, filename = cols
+        images, image_names = cols
+      self.image_names = image_names
       target_seqs = None
       input_mask = None
       input_seqs = None
