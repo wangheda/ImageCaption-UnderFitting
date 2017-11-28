@@ -2,13 +2,15 @@
 
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-model_name="show_and_tell_advanced_model_visual_attention_nocropping"
+sub_dir=$1
+
+model_name="localization_attention_model"
 num_processes=1
 device=1
 model=ShowAndTellAdvancedModel
 
-MODEL_DIR="${DIR}/model/${model_name}"
-for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do 
+MODEL_DIR="${DIR}/model/${model_name}/${sub_dir}"
+for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 10 | tac); do 
   # the script directory
   VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
   VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
@@ -27,6 +29,9 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000); do
       --vocab_file=${DIR}/data/word_counts.txt \
       --output=${OUTPUT_DIR}/out.json \
       --model=${model} \
+      --localization_attention=True \
+      --reader=ImageCaptionTestReader \
+      --batch_size=10 \
       --cropping_images=False \
       --inception_return_tuple=True \
       --use_attention_wrapper=True \

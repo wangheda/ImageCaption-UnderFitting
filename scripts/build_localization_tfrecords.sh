@@ -21,19 +21,37 @@ VALIDATE_LOCALIZATIONS_FILE="${DIR}/../data/bottom_up_attention/aichallenger_val
 TEST1_IMAGE_DIR="${DIR}/../data/ai_challenger_caption_test1_20170923/caption_test1_images_20170923"
 TEST1_LOCALIZATIONS_FILE="${DIR}/../data/bottom_up_attention/aichallenger_test1.tsv.small"
 
-# empty the output dir
-rm ${OUTPUT_DIR}/*.tfrecord
+if [ ! -f $OUTPUT_DIR/train-00000-of-00280.tfrecord ]; then
+  # run the script
+  CUDA_VISIBLE_DEVICES=1 python ${DIR}/build_localization_tfrecords.py \
+    --output_dir=$OUTPUT_DIR \
+    --word_counts_input_file=$VOCAB_FILE \
+    --train_image_dir=$TRAIN_IMAGE_DIR \
+    --train_captions_file=$TRAIN_CAPTIONS_FILE \
+    --train_localizations_file=$TRAIN_LOCALIZATIONS_FILE \
+    --validate_image_dir=$VALIDATE_IMAGE_DIR \
+    --validate_localizations_file=$VALIDATE_LOCALIZATIONS_FILE \
+    --test1_image_dir=$TEST1_IMAGE_DIR \
+    --test1_localizations_file=$TEST1_LOCALIZATIONS_FILE \
+    --build_flip_caption=True \
+    --task=train \
+    --min_word_count=$MIN_WORD_COUNT
+fi
 
-# run the script
-CUDA_VISIBLE_DEVICES=1 python ${DIR}/build_localization_tfrecords.py \
-  --output_dir=$OUTPUT_DIR \
-  --word_counts_input_file=$VOCAB_FILE \
-  --train_image_dir=$TRAIN_IMAGE_DIR \
-  --train_captions_file=$TRAIN_CAPTIONS_FILE \
-  --train_localizations_file=$TRAIN_LOCALIZATIONS_FILE \
-  --validate_image_dir=$VALIDATE_IMAGE_DIR \
-  --validate_localizations_file=$VALIDATE_LOCALIZATIONS_FILE \
-  --test1_image_dir=$TEST1_IMAGE_DIR \
-  --test1_localizations_file=$TEST1_LOCALIZATIONS_FILE \
-  --build_flip_caption=True \
-  --min_word_count=$MIN_WORD_COUNT
+if [ ! -f $OUTPUT_DIR/validate-00000-of-00280.tfrecord ]; then
+  # run the script
+  CUDA_VISIBLE_DEVICES=1 python ${DIR}/build_localization_tfrecords.py \
+    --output_dir=$OUTPUT_DIR \
+    --word_counts_input_file=$VOCAB_FILE \
+    --train_image_dir=$TRAIN_IMAGE_DIR \
+    --train_captions_file=$TRAIN_CAPTIONS_FILE \
+    --train_localizations_file=$TRAIN_LOCALIZATIONS_FILE \
+    --validate_image_dir=$VALIDATE_IMAGE_DIR \
+    --validate_localizations_file=$VALIDATE_LOCALIZATIONS_FILE \
+    --test1_image_dir=$TEST1_IMAGE_DIR \
+    --test1_localizations_file=$TEST1_LOCALIZATIONS_FILE \
+    --build_flip_caption=True \
+    --task=validate \
+    --min_word_count=$MIN_WORD_COUNT
+fi
+
