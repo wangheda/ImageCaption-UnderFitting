@@ -9,11 +9,12 @@ num_processes=1
 device=1
 model=ShowAndTellAdvancedModel
 
+VALIDATE_TFRECORD_FILE="${DIR}/data/Newloc_TFRecord_data/validate*.tfrecord"
+VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
+
 MODEL_DIR="${DIR}/model/${model_name}/${sub_dir}"
-for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 10 | tac); do 
+for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 12 | tac); do 
   # the script directory
-  VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
-  VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
 
   CHECKPOINT_PATH="${MODEL_DIR}/model.ckpt-$ckpt"
   OUTPUT_DIR="${MODEL_DIR}/model.ckpt-${ckpt}.eval"
@@ -23,8 +24,8 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail
   cd ${DIR}/im2txt
 
   if [ ! -f ${OUTPUT_DIR}/out.json ]; then
-    CUDA_VISIBLE_DEVICES=$device python inference.py \
-      --input_file_pattern="${VALIDATE_IMAGE_DIR}/${prefix}*.jpg" \
+    CUDA_VISIBLE_DEVICES=$device python batch_inference.py \
+      --input_file_pattern="$VALIDATE_TFRECORD_FILE" \
       --checkpoint_path=${CHECKPOINT_PATH} \
       --vocab_file=${DIR}/data/word_counts.txt \
       --output=${OUTPUT_DIR}/out.json \

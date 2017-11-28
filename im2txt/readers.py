@@ -165,3 +165,77 @@ def get_input_data_tensors(reader,
         min_after_dequeue=batch_size,
         allow_smaller_final_batch=False,
         enqueue_many=True)
+
+class ImageCaptionTestReader(BaseReader):
+
+  def __init__(self):
+    self.is_training = False
+
+  def prepare_reader(self, filename_queue, batch_size=16):
+    reader = tf.TFRecordReader()
+    _, serialized_examples = reader.read(filename_queue)
+
+    feature_map = {
+        "image/id": tf.FixedLenFeature([], tf.int64),
+        "image/filename": tf.FixedLenFeature([], tf.string),
+        "image/data": tf.FixedLenFeature([], tf.string),
+      }
+    if FLAGS.localization_attention:
+      feature_map["image/localization"] = tf.FixedLenFeature([4*36], tf.float32)
+
+    features = tf.parse_single_example(serialized_examples, features=feature_map)
+    print(" features", features)
+
+    # [1]
+    image_id = features["image/id"] 
+    print(" image_id", image_id)
+
+    filename = features["image/filename"] 
+    print(" filename", filename)
+
+    # [height, width, channels]
+    encoded_image = features["image/data"]
+    image = simple_process_image(encoded_image,
+                                 flip=False,
+                                 is_training=self.is_training)
+    print(" image", image)
+
+    image_id = tf.reshape(image_id,
+                          shape=[1])
+    image = tf.reshape(image, 
+                       shape=[1, FLAGS.image_height, FLAGS.image_width, FLAGS.image_channel])
+    filename = tf.reshape(filename,
+                          shape=[1])
+
+    if FLAGS.localization_attention:
+      localizations = features["image/localization"]
+      localizations = tf.reshape(localizations,
+                               shape=[1, 36, 4])
+
+    return image, filename, localizations
+
+def get_test_input_data_tensors(reader,
+                           data_pattern=None,
+                           batch_size=16,
+                           num_epochs=1,
+                           num_readers=1):
+  reader = ImageCaptionTestReader()
+  logging.info("Using batch size of " + str(batch_size) + " for training.")
+  with tf.name_scope("train_input"):
+    files = gfile.Glob(data_pattern)
+    print("number of training files:", len(files))
+    if not files:
+      raise IOError("Unable to find training files. data_pattern='" +
+                    data_pattern + "'.")
+    logging.info("Number of training files: %s.", str(len(files)))
+    filename_queue = tf.train.string_input_producer(
+        files, num_epochs=num_epochs, shuffle=True)
+
+    training_data = reader.prepare_reader(filename_queue)
+
+    return tf.train.batch(
+        training_data,
+        batch_size=batch_size,
+        capacity=batch_size * 8,
+        allow_smaller_final_batch=False,
+        enqueue_many=True)

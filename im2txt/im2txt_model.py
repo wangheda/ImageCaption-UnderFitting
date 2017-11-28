@@ -248,7 +248,24 @@ class Im2TxtModel(object):
         self.localizations = localizations
       else:
         images, input_seqs, target_seqs, input_mask, target_lengths = cols
-
+    elif FLAGS.reader == "ImageCaptionTestReader":
+      reader = readers.ImageCaptionTestReader()
+      cols = readers.get_test_input_data_tensors(reader,
+                                    data_pattern=FLAGS.input_file_pattern,
+                                    batch_size=FLAGS.batch_size,
+                                    num_epochs=1,
+                                    num_readers=1)
+      if FLAGS.localization_attention:
+        images, image_names, localizations = cols
+        self.localizations = localizations
+        self.image_names = image_names
+      else:
+        images, filename = cols
+      target_seqs = None
+      input_mask = None
+      input_seqs = None
+      target_lengths = None
+        
     self.images = images
     self.input_seqs = input_seqs
     self.target_seqs = target_seqs

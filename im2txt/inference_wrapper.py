@@ -42,6 +42,8 @@ class InferenceWrapper(inference_wrapper_base.InferenceWrapperBase):
       self.scores = model.scores
     if hasattr(model, "top_n_attributes"):
       self.top_n_attributes = model.top_n_attributes
+    if hasattr(model, "image_names"):
+      self.image_names = model.image_names
     return model
 
   def feed_image(self, sess, encoded_image):
