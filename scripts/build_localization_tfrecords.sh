@@ -38,7 +38,7 @@ if [ ! -f $OUTPUT_DIR/train-00000-of-00280.tfrecord ]; then
     --min_word_count=$MIN_WORD_COUNT
 fi
 
-if [ ! -f $OUTPUT_DIR/validate-00000-of-00280.tfrecord ]; then
+if [ ! -f $OUTPUT_DIR/validate-00000-of-00008.tfrecord ]; then
   # run the script
   CUDA_VISIBLE_DEVICES=1 python ${DIR}/build_localization_tfrecords.py \
     --output_dir=$OUTPUT_DIR \
@@ -52,6 +52,23 @@ if [ ! -f $OUTPUT_DIR/validate-00000-of-00280.tfrecord ]; then
     --test1_localizations_file=$TEST1_LOCALIZATIONS_FILE \
     --build_flip_caption=True \
     --task=validate \
+    --min_word_count=$MIN_WORD_COUNT
+fi
+
+if [ ! -f $OUTPUT_DIR/test1-00000-of-00008.tfrecord ]; then
+  # run the script
+  CUDA_VISIBLE_DEVICES=1 python ${DIR}/build_localization_tfrecords.py \
+    --output_dir=$OUTPUT_DIR \
+    --word_counts_input_file=$VOCAB_FILE \
+    --train_image_dir=$TRAIN_IMAGE_DIR \
+    --train_captions_file=$TRAIN_CAPTIONS_FILE \
+    --train_localizations_file=$TRAIN_LOCALIZATIONS_FILE \
+    --validate_image_dir=$VALIDATE_IMAGE_DIR \
+    --validate_localizations_file=$VALIDATE_LOCALIZATIONS_FILE \
+    --test1_image_dir=$TEST1_IMAGE_DIR \
+    --test1_localizations_file=$TEST1_LOCALIZATIONS_FILE \
+    --build_flip_caption=True \
+    --task=test1 \
     --min_word_count=$MIN_WORD_COUNT
 fi
 

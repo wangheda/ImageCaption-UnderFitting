@@ -49,9 +49,9 @@ tf.flags.DEFINE_string("validate_image_dir", "data/ai_challenger_caption_validat
 tf.flags.DEFINE_string("validate_localizations_file", "data/bottom_up_attention/aichallenger_validate.tsv.small",
                        "Validating captions TSV file.")
 
-tf.flags.DEFINE_string("test_image_dir", "data/ai_challenger_caption_test1_20170923/caption_test1_images_20170923",
+tf.flags.DEFINE_string("test1_image_dir", "data/ai_challenger_caption_test1_20170923/caption_test1_images_20170923",
                        "Test image directory.")
-tf.flags.DEFINE_string("test_localizations_file", "data/bottom_up_attention/aichallenger_test.tsv.small",
+tf.flags.DEFINE_string("test1_localizations_file", "data/bottom_up_attention/aichallenger_test.tsv.small",
                        "Test captions TSV file.")
 
 
@@ -86,9 +86,11 @@ tf.flags.DEFINE_integer("num_threads", 8,
 # sharding parameters
 tf.flags.DEFINE_integer("train_shards", 280,
                         "Number of shards in training TFRecord files.")
-tf.flags.DEFINE_integer("validate_shards", 4,
+tf.flags.DEFINE_integer("validate_shards", 8,
                         "Number of shards in validation TFRecord files.")
-tf.flags.DEFINE_integer("test_shards", 8,
+tf.flags.DEFINE_integer("test1_shards", 8,
+                        "Number of shards in testing TFRecord files.")
+tf.flags.DEFINE_integer("test2_shards", 8,
                         "Number of shards in testing TFRecord files.")
 
 tf.flags.DEFINE_boolean("build_flip_caption", False,
@@ -99,6 +101,9 @@ tf.flags.DEFINE_integer("max_ref_length", 30,
                         "Maximum caption length.")
 tf.flags.DEFINE_integer("num_refs", 5,
                         "Number of references per image.")
+
+tf.flags.DEFINE_string("task", "train",
+                       "Options are train/validate/test1/test2.")
 
 FLAGS = tf.flags.FLAGS
 
@@ -267,24 +272,30 @@ def _to_sequence_example(image, decoder, vocab):
 
     base_filename = image.base_filename
     localization = image.localization
-    caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image.captions]
-    caption_lengths = [len(caption) for caption in caption_ids]
-    flip_caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image.flip_captions]
-    flip_caption_lengths = [len(caption) for caption in flip_caption_ids]
-
-    caption_ids, caption_lengths = pad_or_truncate(caption_ids, caption_lengths)
-    flip_caption_ids, flip_caption_lengths = pad_or_truncate(flip_caption_ids, flip_caption_lengths)
-    
-    features = tf.train.Features(feature={
+    feature_list = {
         "image/id": _int64_feature(image.id),
         "image/filename": _bytes_feature(base_filename),
         "image/localization": _float_list(localization),
         "image/data": _bytes_feature(encoded_image),
-        "image/ref_words": _int64_list(caption_ids),
-        "image/ref_lengths": _int64_list(caption_lengths),
-        "image/flipped_ref_words": _int64_list(flip_caption_ids),
-        "image/flipped_ref_lengths": _int64_list(flip_caption_lengths),
-    })
+    }
+
+    if image.captions is not None:
+        caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image.captions]
+        caption_lengths = [len(caption) for caption in caption_ids]
+        flip_caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image.flip_captions]
+        flip_caption_lengths = [len(caption) for caption in flip_caption_ids]
+
+        caption_ids, caption_lengths = pad_or_truncate(caption_ids, caption_lengths)
+        flip_caption_ids, flip_caption_lengths = pad_or_truncate(flip_caption_ids, flip_caption_lengths)
+
+        feature_list.update({
+            "image/ref_words": _int64_list(caption_ids),
+            "image/ref_lengths": _int64_list(caption_lengths),
+            "image/flipped_ref_words": _int64_list(flip_caption_ids),
+            "image/flipped_ref_lengths": _int64_list(flip_caption_lengths),
+        })
+    
+    features = tf.train.Features(feature=feature_list)
     example = tf.train.Example(features=features)
 
     return example
@@ -466,26 +477,34 @@ def _load_and_process_metadata(captions_file, localizations_file, image_dir):
     """
     loc_dict = _load_localization_file(localizations_file)
     image_id = set([])
-    id_to_captions = {}
-    with open(captions_file, 'r') as f:
-        caption_data = json.load(f)
-    for data in caption_data:
-        image_name = data['image_id'].split('.')[0]
-        descriptions = data['caption']
-        if image_name not in image_id:
-            id_to_captions.setdefault(image_name, [])
-            image_id.add(image_name)
 
-        caption_num = len(descriptions)
+    if captions_file is not None:
+        id_to_captions = {}
+        with open(captions_file, 'r') as f:
+            caption_data = json.load(f)
+        for data in caption_data:
+            image_name = data['image_id'].split('.')[0]
+            descriptions = data['caption']
+            if image_name not in image_id:
+                id_to_captions.setdefault(image_name, [])
+                image_id.add(image_name)
 
-        for i in range(caption_num):
-            caption_temp = descriptions[i].strip().strip("。").replace('\n', '')
-            if caption_temp != '':
-                id_to_captions[image_name].append(caption_temp)
+            caption_num = len(descriptions)
 
+            for i in range(caption_num):
+                caption_temp = descriptions[i].strip().strip("。").replace('\n', '')
+                if caption_temp != '':
+                    id_to_captions[image_name].append(caption_temp)
+        print("Loaded caption metadata for %d images from %s and image_id num is %s" %
+              (len(id_to_captions), captions_file, len(image_id)))
+    else:
+        id_to_captions = None
+        for filename in os.listdir(image_dir):
+            if filename.endswith(".jpg"):
+                image_name = filename.split(".")[0]
+                if image_name not in image_id:
+                    image_id.add(image_name)
 
-    print("Loaded caption metadata for %d images from %s and image_id num is %s" %
-          (len(id_to_captions), captions_file, len(image_id)))
     # Process the captions and combine the data into a list of ImageMetadata.
     print("Proccessing captions.")
     image_metadata = []
@@ -494,13 +513,17 @@ def _load_and_process_metadata(captions_file, localizations_file, image_dir):
     for base_filename in image_id:
         localization = loc_dict[base_filename]
         filename = os.path.join(image_dir, base_filename + '.jpg')
-        captions = [_process_caption_jieba(c) for c in id_to_captions[base_filename]]
-        flip_captions = [_process_caption_jieba(func_flip_caption(c)) for c in id_to_captions[base_filename]]
+        if id_to_captions is not None:
+          captions = [_process_caption_jieba(c) for c in id_to_captions[base_filename]]
+          flip_captions = [_process_caption_jieba(func_flip_caption(c)) for c in id_to_captions[base_filename]]
+          num_captions += len(captions)
+        else:
+          captions = None
+          flip_captions = None
         image_metadata.append(ImageMetadata(id, filename, base_filename, localization, captions, flip_captions))
         id = id + 1
-        num_captions += len(captions)
     print("Finished processing %d captions for %d images in %s" %
-          (num_captions, len(id_to_captions), captions_file))
+          (num_captions, len(image_id), captions_file))
     return image_metadata
 
 
@@ -513,40 +536,53 @@ def main(unused_argv):
         "Please make the FLAGS.num_threads commensurate with FLAGS.train_shards")
     assert _is_valid_num_shards(FLAGS.validate_shards), (
         "Please make the FLAGS.num_threads commensurate with FLAGS.validate_shards")
-    assert _is_valid_num_shards(FLAGS.test_shards), (
-        "Please make the FLAGS.num_threads commensurate with FLAGS.test_shards")
+    assert _is_valid_num_shards(FLAGS.test1_shards), (
+        "Please make the FLAGS.num_threads commensurate with FLAGS.test1_shards")
+    assert _is_valid_num_shards(FLAGS.test2_shards), (
+        "Please make the FLAGS.num_threads commensurate with FLAGS.test2_shards")
 
     if not tf.gfile.IsDirectory(FLAGS.output_dir):
         tf.gfile.MakeDirs(FLAGS.output_dir)
 
-    # Load image metadata from caption files.
-    train_dataset = _load_and_process_metadata(FLAGS.train_captions_file,
-                                               FLAGS.train_localizations_file,
-                                               FLAGS.train_image_dir)
+    if FLAGS.task == "train":
+        # Load image metadata from caption files.
+        train_dataset = _load_and_process_metadata(FLAGS.train_captions_file,
+                                                   FLAGS.train_localizations_file,
+                                                   FLAGS.train_image_dir)
 
-    """
-    # Redistribute the MSCOCO data as follows:
-    #   train_dataset = 100% of mscoco_train_dataset + 85% of mscoco_validate_dataset.
-    #   validate_dataset = 5% of mscoco_validate_dataset (for validation during training).
-    #   test_dataset = 10% of mscoco_validate_dataset (for final evaluation).
-    train_cutoff = int(0.85 * len(mscoco_validate_dataset))
-    validate_cutoff = int(0.90 * len(mscoco_validate_dataset))
-    train_dataset = mscoco_train_dataset + mscoco_validate_dataset[0:train_cutoff]
-    validate_dataset = mscoco_validate_dataset[train_cutoff:validate_cutoff]
-    test_dataset = mscoco_validate_dataset[validate_cutoff:]
-    """
-
-
-    # Create vocabulary from the training captions.
-    if FLAGS.word_counts_input_file:
+        # Create vocabulary from the training captions.
         vocab = load_vocab(FLAGS.word_counts_input_file)
-    else:
-        train_captions = [c for image in train_dataset for c in image.captions]
-        train_captions.extend([c for image in train_dataset for c in image.flip_captions])
-        vocab = _create_vocab(train_captions)
+        _process_dataset("train", train_dataset, vocab, FLAGS.train_shards)
 
-    _process_dataset("train", train_dataset, vocab, FLAGS.train_shards)
-    # _process_dataset("test", test_dataset, vocab, FLAGS.test_shards)
+    elif FLAGS.task == "validate":
+        # Load image metadata from caption files.
+        validate_dataset = _load_and_process_metadata(None,
+                                                   FLAGS.validate_localizations_file,
+                                                   FLAGS.validate_image_dir)
+
+        # Create vocabulary from the training captions.
+        vocab = load_vocab(FLAGS.word_counts_input_file)
+        _process_dataset("validate", validate_dataset, vocab, FLAGS.validate_shards)
+
+    elif FLAGS.task == "test1":
+        # Load image metadata from caption files.
+        test1_dataset = _load_and_process_metadata(None,
+                                                   FLAGS.test1_localizations_file,
+                                                   FLAGS.test1_image_dir)
+
+        # Create vocabulary from the training captions.
+        vocab = load_vocab(FLAGS.word_counts_input_file)
+        _process_dataset("test1", test1_dataset, vocab, FLAGS.test1_shards)
+
+    elif FLAGS.task == "test2":
+        # Load image metadata from caption files.
+        test2_dataset = _load_and_process_metadata(None,
+                                                   FLAGS.test2_localizations_file,
+                                                   FLAGS.test2_image_dir)
+
+        # Create vocabulary from the training captions.
+        vocab = load_vocab(FLAGS.word_counts_input_file)
+        _process_dataset("test2", test2_dataset, vocab, FLAGS.test2_shards)
 
 if __name__ == "__main__":
     tf.app.run()
