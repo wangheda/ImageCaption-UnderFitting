@@ -207,7 +207,7 @@ class SemanticAttentionModel(object):
                                    trainable=False,
                                    name="attributes_mask")
     if FLAGS.use_idf_weighted_attribute_loss:
-      idf_weighted_mask = tf.Variable(mask,
+      idf_weighted_mask = tf.Variable(idf_mask,
                                      trainable=False,
                                      name="idf_weighted_mask")
     return attributes_mask, idf_weighted_mask
