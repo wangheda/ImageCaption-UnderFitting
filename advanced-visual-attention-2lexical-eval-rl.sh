@@ -11,7 +11,7 @@ model=ShowAndTellAdvancedModel
 MODEL_DIR="${DIR}/model/${model_name}"
 for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 8000 | tail -n 20 | tac); do 
   # the script directory
-  VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
+  VALIDATE_FILE_PATTERN="${DIR}/data/Newloc_TFRecord_data/validate*.tfrecord"
   VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
 
   CHECKPOINT_PATH="${MODEL_DIR}/model.ckpt-$ckpt"
@@ -22,8 +22,10 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 8000 | tail 
   cd ${DIR}/im2txt
 
   if [ ! -f ${OUTPUT_DIR}/out.json ]; then
-    CUDA_VISIBLE_DEVICES=$device python inference.py \
-      --input_file_pattern="${VALIDATE_IMAGE_DIR}/${prefix}*.jpg" \
+    CUDA_VISIBLE_DEVICES=$device python batch_inference.py \
+      --reader=ImageCaptionTestReader \
+      --batch_size=20 \
+      --input_file_pattern="${VALIDATE_FILE_PATTERN}" \
       --checkpoint_path=${CHECKPOINT_PATH} \
       --vocab_file=${DIR}/data/word_counts.txt \
       --output=${OUTPUT_DIR}/out.json \
