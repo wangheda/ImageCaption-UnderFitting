@@ -211,8 +211,9 @@ class ImageCaptionTestReader(BaseReader):
       localizations = features["image/localization"]
       localizations = tf.reshape(localizations,
                                shape=[1, 36, 4])
-
-    return image, filename, localizations
+      return image, filename, localizations
+    else:
+      return image, filename
 
 def get_test_input_data_tensors(reader,
                            data_pattern=None,

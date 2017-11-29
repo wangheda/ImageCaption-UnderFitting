@@ -29,6 +29,8 @@ if [ ! -f ${OUTPUT_DIR}/out.json ]; then
     --checkpoint_path=${CHECKPOINT_PATH} \
     --vocab_file=${DIR}/data/word_counts.txt \
     --output=${OUTPUT_DIR}/out.json \
+    --reader=ImageCaptionTestReader \
+    --batch_size=10 \
     --model=${model} \
     --inception_return_tuple=True \
     --use_attention_wrapper=True \
