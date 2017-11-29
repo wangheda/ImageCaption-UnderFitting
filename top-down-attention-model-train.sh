@@ -77,6 +77,7 @@ if [ $command == "cmd:finetune" ]; then
     --reader=ImageCaptionReader \
     --localization_attention=True \
     --cropping_images=False \
+    --exclude_variable_patterns='OptimizeLoss/InceptionV3/.*' \
     --number_of_steps=$STEPS
 fi
 PREV_SUB_MODEL_DIR=$SUB_MODEL_DIR
@@ -114,6 +115,7 @@ if [ $command == "cmd:rl_finetune" ]; then
     --rl_training=True \
     --rl_training_loss="SelfCriticalLoss" \
     --document_frequency_file="${DOCUMENT_FREQUENCY_FILE}" \
+    --exclude_variable_patterns='OptimizeLoss/InceptionV3/.*' \
     --number_of_steps=$STEPS
 fi
 PREV_SUB_MODEL_DIR=$SUB_MODEL_DIR
