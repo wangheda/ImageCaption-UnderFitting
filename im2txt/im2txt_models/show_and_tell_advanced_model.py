@@ -1,5 +1,6 @@
 
 import tensorflow as tf
+import numpy as np
 from tensorflow.python.layers.core import Dense
 import custom_rnn_cell
 
@@ -280,10 +281,32 @@ class ShowAndTellAdvancedModel(object):
             maximum_iterations=FLAGS.max_caption_length)
 
           # 2. generate sample captions
-          helper = tf.contrib.seq2seq.SampleEmbeddingHelper(
-            embedding=embedding_map,
-            start_tokens=tf.fill([batch_size], FLAGS.start_token),
-            end_token=FLAGS.end_token)
+          if FLAGS.rl_beam_search_approximation == True:
+            # use beam search results as sample results
+            bs_image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings, multiplier=FLAGS.beam_width)
+            bs_zero_state = lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
+            _, bs_initial_state = lstm_cell(bs_image_embeddings, bs_zero_state)
+
+            decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+              cell=lstm_cell,
+              embedding=embedding_map,
+              start_tokens=tf.fill([batch_size], FLAGS.start_token),    #[batch_size]
+              end_token=FLAGS.end_token,
+              initial_state=bs_initial_state,
+              beam_width=FLAGS.beam_width,
+              output_layer=output_layer,
+              length_penalty_weight=0.0)
+          else:
+            helper = tf.contrib.seq2seq.SampleEmbeddingHelper(
+              embedding=embedding_map,
+              start_tokens=tf.fill([batch_size], FLAGS.start_token),
+              end_token=FLAGS.end_token)
+            decoder = tf.contrib.seq2seq.BasicDecoder(
+              cell=lstm_cell,
+              helper=helper,
+              initial_state=initial_state,
+              output_layer=output_layer)
+
         else:
           # use cross entropy
           sequence_length = tf.reduce_sum(input_mask, 1)
@@ -326,11 +349,11 @@ class ShowAndTellAdvancedModel(object):
               inputs=seq_embeddings,
               sequence_length=sequence_length)
 
-        decoder = tf.contrib.seq2seq.BasicDecoder(
-          cell=lstm_cell,
-          helper=helper,
-          initial_state=initial_state,
-          output_layer=output_layer)
+          decoder = tf.contrib.seq2seq.BasicDecoder(
+            cell=lstm_cell,
+            helper=helper,
+            initial_state=initial_state,
+            output_layer=output_layer)
 
       elif mode == "inference":
         decoder = tf.contrib.seq2seq.BeamSearchDecoder(
@@ -362,11 +385,64 @@ class ShowAndTellAdvancedModel(object):
 
     if mode == "train":
       if FLAGS.rl_training == True:
-        return {"sample_caption_words"   : outputs.sample_id,
-                "sample_caption_logits"  : outputs.rnn_output,
-                "sample_caption_lengths" : outputs_sequence_lengths,
-                "greedy_caption_words"   : greedy_outputs.sample_id,
-                "greedy_caption_lengths" : greedy_outputs_sequence_lengths}
+        model_outputs["greedy_caption_words"] = greedy_outputs.sample_id
+        model_outputs["greedy_caption_lengths"] = greedy_outputs_sequence_lengths
+        if FLAGS.rl_beam_search_approximation:
+          # get beam search log_probs
+          def gather_tree_py(values, parents):
+            """Gathers path through a tree backwards from the leave nodes. Used
+            to reconstruct beams given their parents."""
+            beam_length = values.shape[0]
+            num_beams = values.shape[1]
+            res = np.zeros_like(values)
+            res[-1, :] = values[-1, :]
+            for beam_id in range(num_beams):
+              parent = parents[-1][beam_id]
+              for level in reversed(range(beam_length - 1)):
+                res[level, beam_id] = values[level][parent]
+                parent = parents[level][parent]
+            return np.array(res).astype(values.dtype)
+
+          def gather_tree(values, parents):
+            """Tensor version of gather_tree_py"""
+            res = tf.py_func(
+                func=gather_tree_py, inp=[values, parents], Tout=values.dtype)
+            res.set_shape(values.get_shape().as_list())
+            return res
+
+          bsd_outputs = outputs.beam_search_decoder_output
+          bsd_scores = tf.map_fn(
+                              lambda (x,y): gather_tree(x,y),
+                              (bsd_outputs.scores, bsd_outputs.parent_ids),
+                              dtype=tf.float32)
+          bsd_scores = tf.concat([tf.zeros([batch_size, 1, FLAGS.beam_width], dtype=tf.float32), bsd_scores], axis=1)
+          bsd_log_probs = bsd_scores[:,1:,:] - bsd_scores[:,0:-1,:]
+
+          # only choose one caption as sample caption
+          random_indices = tf.random_uniform(
+                              shape=[batch_size, 1],
+                              minval=0,
+                              maxval=FLAGS.beam_width,
+                              dtype=tf.int32)
+          # extract predict
+          model_outputs["sample_caption_words"] = tf.map_fn(
+                                  lambda (x,y): x[:,tf.squeeze(y)],
+                                  (outputs.predicted_ids ,random_indices),
+                                  dtype=tf.int32)
+          model_outputs["sample_caption_lengths"] = tf.map_fn(
+                                  lambda (x,y): x[:,tf.squeeze(y)],
+                                  (outputs_sequence_lengths ,random_indices),
+                                  dtype=tf.int32)
+          # here is log probs, not logits
+          model_outputs["sample_caption_logits"] = tf.map_fn(
+                                  lambda (x,y): x[:,tf.squeeze(y)],
+                                  (bsd_log_probs ,random_indices),
+                                  dtype=tf.float32)
+        else:
+          model_outputs.update(
+              {"sample_caption_words"   : outputs.sample_id,
+               "sample_caption_logits"  : outputs.rnn_output,
+               "sample_caption_lengths" : outputs_sequence_lengths})
       else:
         logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
         model_outputs["logits"] = logits
