@@ -1,0 +1,3 @@
+model/show_and_tell_advanced_model_attention_finetune_with_decay/model.ckpt-580699.inference_all
+model/show_and_tell_advanced_model_attention_finetune_with_decay_da/model.ckpt-561157.inference_all
+model/show_and_tell_advanced_model_visual_attention_rl_adam_lr5e-5_decay308/model.ckpt-840942.inference_all

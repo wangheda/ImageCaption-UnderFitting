@@ -4,7 +4,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # input
-INFERENCE_ALL="${DIR}/../resources/inference_all_v2.list"
+INFERENCE_ALL="${DIR}/../resources/inference_all_v3.list"
 
 # caption
 VALIDATE_CAPTIONS_FILE="${DIR}/../data/ai_challenger_caption_validation_20170910/caption_validation_annotations_20170910.json"
@@ -140,18 +140,18 @@ for part in VALIDATE TRAIN; do
   fi
 
   image_dir=$IMAGE_DIR
-  output_dir=${DIR}/../data/Ranker_TFRecord_data_v2/${hash_dir1}
+  output_dir=${DIR}/../data/Ranker_TFRecord_data_v3/${hash_dir1}
 
   maxlen=30
   strategy1=0
-  strategy2=10
-  strategy3=0
+  strategy2=0
+  strategy3=10
   num_shards=$SHARD
 
   for c in $LIST; do
     refcsv_file=${ref_dir}/refcsv-${part}-${c}
     csv_file=${base_dir}/${hash_dir1}/csv-${part}-${c}
-    triplets_file=${base_dir}/${hash_dir1}/triplets-${part}-${c}.v2
+    triplets_file=${base_dir}/${hash_dir1}/triplets-${part}-${c}.v3
 
     if [ ! -f $triplets_file ]; then
       python ${DIR}/build_image_pos_neg_triplets.py \
@@ -163,14 +163,14 @@ for part in VALIDATE TRAIN; do
               --strategy3=$strategy3
     fi
 
-    marker_file=${base_dir}/${hash_dir1}/marker-${part}-${c}.v2
+    marker_file=${base_dir}/${hash_dir1}/marker-${part}-${c}.v3
     if [ ! -f $marker_file ]; then
-      CUDA_VISIBLE_DEVICES="" python ${DIR}/build_image_pos_neg_tfrecords.py \
+      CUDA_VISIBLE_DEVICES="" python ${DIR}/build_image_pos_neg_tfrecords_mert.py \
               --word_counts_input_file=${DIR}/../data/word_counts.txt \
               --input_file=$triplets_file \
               --num_shards=$num_shards \
               --maxlen=$maxlen \
-              --lines_per_image=$(($strategy1 + $strategy2)) \
+              --lines_per_image=$(($strategy1 + $strategy2 + $strategy3)) \
               --image_dir=$image_dir \
               --output_prefix="rankertrain-${part}-${c}" \
               --output_dir=$output_dir \
