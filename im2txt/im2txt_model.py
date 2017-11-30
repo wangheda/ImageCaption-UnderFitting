@@ -98,11 +98,14 @@ tf.flags.DEFINE_string("vocab_file", "",
 # reinforcement learning config
 tf.flags.DEFINE_boolean("rl_training", False,
                         "Train with reinforcement learning.")
+tf.flags.DEFINE_boolean("rl_beam_search_approximation", False,
+                        "Whether use beam search to generate sample captions.")
 tf.flags.DEFINE_boolean("rl_training_along_with_mle", False,
                         "Train with reinforcement learning with the mle (need to use it along with rl_training).")
 tf.flags.DEFINE_string("rl_training_loss", "SelfCriticalLoss",
                         "Type of loss in reinforcement learning.")
 tf.flags.DEFINE_integer("max_ref_length", 30, "Max reference length.")
+
 
 # image config
 tf.flags.DEFINE_boolean("l2_normalize_image", False,

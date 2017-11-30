@@ -120,26 +120,27 @@ class SelfCriticalLoss(BaseLoss):
     reward = tf.stop_gradient(reward)
 
     # extract the logprobs of each word in sample_captions
-    sample_probs = tf.nn.softmax(sample_caption_logits)
+    if FLAGS.rl_beam_search_approximation:
+      sample_caption_logprobs = sample_caption_logits
+    else:
+      sample_probs = tf.nn.softmax(sample_caption_logits)
+      batch_size, max_sample_length, _ = sample_probs.get_shape().as_list()
+      sample_caption_mask = tf.sequence_mask(sample_caption_lengths, 
+                                             maxlen=max_sample_length)
+      sample_caption_mask = tf.cast(sample_caption_mask, dtype=tf.float32)
+      sample_batch_index = tf.tile(tf.reshape(tf.range(0, batch_size), 
+                                              shape=[batch_size,1]), 
+                                   multiples=[1, max_sample_length])
+      sample_seq_index = tf.tile(tf.reshape(tf.range(0, max_sample_length), 
+                                            shape=[1, max_sample_length]), 
+                                 multiples=[batch_size, 1])
+      sample_gather_index = tf.stack([sample_batch_index, 
+                                      sample_seq_index, 
+                                      sample_caption_words], axis=2)
 
-    # get sample_probs of every 
-    batch_size, max_sample_length, _ = sample_probs.get_shape().as_list()
-    sample_caption_mask = tf.sequence_mask(sample_caption_lengths, 
-                                           maxlen=max_sample_length)
-    sample_caption_mask = tf.cast(sample_caption_mask, dtype=tf.float32)
-    sample_batch_index = tf.tile(tf.reshape(tf.range(0, batch_size), 
-                                            shape=[batch_size,1]), 
-                                 multiples=[1, max_sample_length])
-    sample_seq_index = tf.tile(tf.reshape(tf.range(0, max_sample_length), 
-                                          shape=[1, max_sample_length]), 
-                               multiples=[batch_size, 1])
-    sample_gather_index = tf.stack([sample_batch_index, 
-                                    sample_seq_index, 
-                                    sample_caption_words], axis=2)
+      sample_caption_logprobs = tf.log(tf.gather_nd(sample_probs, sample_gather_index))
 
-    sample_caption_probs = tf.gather_nd(sample_probs, sample_gather_index)
-
-    rl_loss = tf.expand_dims(reward, 1) * tf.log(sample_caption_probs)
+    rl_loss = tf.expand_dims(reward, 1) * sample_caption_logprobs
     rl_loss = tf.div(tf.reduce_sum(rl_loss * sample_caption_mask),
                      tf.reduce_sum(sample_caption_mask),
                      name="rl_loss")
