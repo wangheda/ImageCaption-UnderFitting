@@ -3,7 +3,7 @@
 # the script directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-device=1
+device=0
 
 INCEPTION_CHECKPOINT="${DIR}/pretrained_model/inception_v3/inception_v3.ckpt"
 TFRECORD_DIR="${DIR}/data/New_Ranker_data/5170e21e04710bdcf3f85cffc39bee4d0acc0e74/ranker_tfrecords"
