@@ -5,7 +5,8 @@ model=ShowAndTellAdvancedModel
 num_processes=1
 gpu_fraction=1.0
 device=0
-ckpt=840942
+#ckpt=840942
+ckpt=1080903
 
 # the script directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -17,10 +18,11 @@ BASE_OUTPUT_DIR="${MODEL_DIR}/model.ckpt-${ckpt}.inference_all"
 TRAIN_IMAGE_DIR="${DIR}/data/ai_challenger_caption_train_20170902/caption_train_images_20170902"
 VALIDATE_IMAGE_DIR="${DIR}/data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
 TEST_IMAGE_DIR="${DIR}/data/ai_challenger_caption_test1_20170923/caption_test1_images_20170923"
+TESTB_IMAGE_DIR="${DIR}/data/ai_challenger_caption_test_b_20171120/caption_test_b_images_20171120"
 
 cd ${DIR}/im2txt
 
-for mode in TRAIN VALIDATE TEST; do
+for mode in TRAIN VALIDATE TEST TESTB; do
   OUTPUT_DIR="${BASE_OUTPUT_DIR}/${mode}"
   IMAGE_DIR_NAME="${mode}_IMAGE_DIR"
   IMAGE_DIR=${!IMAGE_DIR_NAME}
