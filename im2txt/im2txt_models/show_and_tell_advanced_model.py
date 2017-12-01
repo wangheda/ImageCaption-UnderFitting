@@ -170,21 +170,14 @@ class ShowAndTellAdvancedModel(object):
 
     if FLAGS.use_attention_wrapper:
       # If mode is inference, copy the middle layer many times
-      if mode == "inference":
+      if mode == "inference" \
+          or (mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation) :
         middle_layer = tf.contrib.seq2seq.tile_batch(middle_layer, multiplier=FLAGS.beam_width)
 
       visual_attention_mechanism = getattr(tf.contrib.seq2seq, 
           FLAGS.attention_mechanism)(
               num_units = FLAGS.num_attention_depth,
               memory = middle_layer)
-      
-      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
-        bs_middle_layer = tf.contrib.seq2seq.tile_batch(middle_layer, multiplier=FLAGS.beam_width)
-        bs_visual_attention_mechanism = getattr(tf.contrib.seq2seq, 
-          FLAGS.attention_mechanism)(
-              num_units = FLAGS.num_attention_depth,
-              memory = bs_middle_layer)
-        print("tile batch the visual memory!", bs_middle_layer)
 
     if FLAGS.use_semantic_attention:
       if FLAGS.use_separate_embedding_for_semantic_attention:
@@ -221,49 +214,29 @@ class ShowAndTellAdvancedModel(object):
       else:
         raise Exception("Unknown semantic_attention_type!")
 
-      if mode == "inference":
+      if mode == "inference" \
+          or (mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation) : 
         semantic_memory = tf.contrib.seq2seq.tile_batch(semantic_memory, multiplier=FLAGS.beam_width)
 
       semantic_attention_mechanism = getattr(tf.contrib.seq2seq, 
           FLAGS.attention_mechanism)(
               num_units = FLAGS.semantic_attention_word_hash_depth,
               memory = semantic_memory)
-      
-      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
-        bs_semantic_memory = tf.contrib.seq2seq.tile_batch(semantic_memory, multiplier=FLAGS.beam_width)
-        bs_semantic_attention_mechanism = getattr(tf.contrib.seq2seq, 
-          FLAGS.attention_mechanism)(
-              num_units = FLAGS.num_attention_depth,
-              memory = bs_semantic_memory)
-        print("tile batch the semantic memory!", bs_semantic_memory)
 
     if FLAGS.use_attention_wrapper and FLAGS.use_semantic_attention:
       attention_mechanism = [visual_attention_mechanism, semantic_attention_mechanism]
       attention_layer_size = [FLAGS.num_attention_depth, FLAGS.num_attention_depth]
-      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
-        bs_attention_mechanism = [bs_visual_attention_mechanism, bs_semantic_attention_mechanism]
     elif FLAGS.use_attention_wrapper:
       attention_mechanism = visual_attention_mechanism
       attention_layer_size = FLAGS.num_attention_depth
-      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
-        bs_attention_mechanism = bs_visual_attention_mechanism
     elif FLAGS.use_semantic_attention:
       attention_mechanism = semantic_attention_mechanism
       attention_layer_size = FLAGS.num_attention_depth
-      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
-        bs_attention_mechanism = bs_semantic_attention_mechanism
     else:
       attention_mechanism = None
       attention_layer_size = 0
 
     if attention_mechanism is not None:
-      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
-        bs_lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
-          lstm_cell,
-          bs_attention_mechanism,
-          attention_layer_size=attention_layer_size,
-          output_attention=FLAGS.output_attention)
-      
       lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
           lstm_cell,
           attention_mechanism,
@@ -275,8 +248,13 @@ class ShowAndTellAdvancedModel(object):
       batch_size = get_shape(image_embeddings)[0]
 
       if mode == "train":
-        zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
-        _, initial_state = lstm_cell(image_embeddings, zero_state)
+        if FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
+          image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings, multiplier=FLAGS.beam_width)
+          zero_state = lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
+          _, initial_state = lstm_cell(image_embeddings, zero_state)
+        else:
+          zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
+          _, initial_state = lstm_cell(image_embeddings, zero_state)
       elif mode == "inference":
         image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings, multiplier=FLAGS.beam_width)
         zero_state = lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
@@ -290,7 +268,7 @@ class ShowAndTellAdvancedModel(object):
       # lstm_scope.reuse_variables()
 
       if mode == "train":
-        if FLAGS.rl_training == True:
+        if FLAGS.rl_training:
           # use rl train
           # 1. generate greedy captions
           greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
@@ -311,17 +289,12 @@ class ShowAndTellAdvancedModel(object):
           # 2. generate sample captions
           if FLAGS.rl_beam_search_approximation:
             # use beam search results as sample results
-            bs_image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings, multiplier=FLAGS.beam_width)
-            bs_zero_state = bs_lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
-            _, bs_initial_state = bs_lstm_cell(bs_image_embeddings, bs_zero_state)
-            print("bs_zero_state")
-
             decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-              cell=bs_lstm_cell,
+              cell=lstm_cell,
               embedding=embedding_map,
               start_tokens=tf.fill([batch_size], FLAGS.start_token),    #[batch_size]
               end_token=FLAGS.end_token,
-              initial_state=bs_initial_state,
+              initial_state=initial_state,
               beam_width=FLAGS.beam_width,
               output_layer=output_layer,
               length_penalty_weight=0.0)
@@ -416,6 +389,8 @@ class ShowAndTellAdvancedModel(object):
       if FLAGS.rl_training == True:
         model_outputs["greedy_caption_words"] = greedy_outputs.sample_id
         model_outputs["greedy_caption_lengths"] = greedy_outputs_sequence_lengths
+        print("greedy caption words: ", model_outputs["greedy_caption_words"])
+        print("greedy caption lengths: ", model_outputs["greedy_caption_lengths"])
         if FLAGS.rl_beam_search_approximation:
           # get beam search log_probs
           def gather_tree_py(values, parents):
