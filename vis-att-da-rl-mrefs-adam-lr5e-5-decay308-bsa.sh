@@ -9,7 +9,7 @@ MODEL_DIR="${DIR}/model"
 DOCUMENT_FREQUENCY_FILE="${DIR}/data/document_frequency.json"
 
 model=ShowAndTellAdvancedModel
-model_dir_name=show_and_tell_advanced_model_visual_attention_rl_adam_lr5e-5_decay308
+model_dir_name=show_and_tell_advanced_model_visual_attention_rl_adam_lr5e-5_decay308_bsa
 original_model_dir_name=show_and_tell_advanced_model_attention_finetune_with_decay_da
 start_ckpt=640713
 
@@ -20,7 +20,7 @@ if [ ! -d ${MODEL_DIR}/${model_dir_name} ]; then
   echo "model_checkpoint_path: \"${MODEL_DIR}/${model_dir_name}/model.ckpt-${start_ckpt}\"" > ${MODEL_DIR}/${model_dir_name}/checkpoint
 fi
 
-cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
+cd im2txt && CUDA_VISIBLE_DEVICES=1 python train.py \
   --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
   --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
   --train_dir="${MODEL_DIR}/${model_dir_name}" \
@@ -38,8 +38,9 @@ cd im2txt && CUDA_VISIBLE_DEVICES=0 python train.py \
   --num_examples_per_epoch=210000 \
   --num_epochs_per_decay=3 \
   --train_inception_with_decay=False \
-  --number_of_steps=1100000 \
+  --number_of_steps=800000 \
   --rl_training=True \
+  --rl_beam_search_approximation=True \
   --reader=ImageCaptionReader \
   --multiple_references=True \
   --exclude_variable_patterns="OptimizeLoss/.+/Adam.*,OptimizeLoss/beta1_power,OptimizeLoss/beta2_power" \

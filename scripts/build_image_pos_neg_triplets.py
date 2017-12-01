@@ -63,6 +63,7 @@ if __name__ == "__main__":
       return candidates[:num]
 
     lines = []
+    captions_pool = []
     for image_id in image_ids:
       gt = true_captions[image_id]
       pd = proposed_captions[image_id]
@@ -70,18 +71,25 @@ if __name__ == "__main__":
       try:
         if strategy1 > 0:
           c1 = get_candidates(image_id, gt, pd, strategy1)
+          lines.extend(map(lambda x: "\t".join(x)+"\n", c1))
 
         pd.sort(reverse=True)
-        top_pd = pd[:3]
-        other_pd = pd[3:]
+        top_pd = pd[:2]
+        other_pd = pd[2:]
 
         if strategy2 > 0:
           c2 = get_candidates(image_id, top_pd, other_pd, strategy2)
-
-        if strategy1 > 0:
-          lines.extend(map(lambda x: "\t".join(x)+"\n", c1))
-        if strategy2 > 0:
           lines.extend(map(lambda x: "\t".join(x)+"\n", c2))
+
+        if strategy3 > 0:
+          # maintain a caption's pool
+          captions_pool.extend(pd)
+          random.shuffle(captions_pool)
+          captions_pool = captions_pool[:1000]
+          # get stratefy3 candidates
+          c3 = get_candidates(image_id, top_pd, captions_pool, strategy3)
+          lines.extend(map(lambda x: "\t".join(x)+"\n", c3))
+
       except Exception as e:
         print(e)
       finally:
