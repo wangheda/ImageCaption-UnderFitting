@@ -119,15 +119,14 @@ class SelfCriticalLoss(BaseLoss):
     reward = greedy_score - sample_score
     reward = tf.stop_gradient(reward)
 
-    # extract the logprobs of each word in sample_captions
     if FLAGS.rl_beam_search_approximation:
+      # sample_caption_logits is already log probs
       sample_caption_logprobs = sample_caption_logits
+      batch_size, max_sample_length = sample_caption_logprobs.get_shape().as_list()
     else:
+      # extract the logprobs of each word in sample_captions
       sample_probs = tf.nn.softmax(sample_caption_logits)
       batch_size, max_sample_length, _ = sample_probs.get_shape().as_list()
-      sample_caption_mask = tf.sequence_mask(sample_caption_lengths, 
-                                             maxlen=max_sample_length)
-      sample_caption_mask = tf.cast(sample_caption_mask, dtype=tf.float32)
       sample_batch_index = tf.tile(tf.reshape(tf.range(0, batch_size), 
                                               shape=[batch_size,1]), 
                                    multiples=[1, max_sample_length])
@@ -140,6 +139,10 @@ class SelfCriticalLoss(BaseLoss):
 
       sample_caption_logprobs = tf.log(tf.gather_nd(sample_probs, sample_gather_index))
 
+    sample_caption_mask = tf.sequence_mask(sample_caption_lengths, 
+                                           maxlen=max_sample_length)
+    sample_caption_mask = tf.cast(sample_caption_mask, dtype=tf.float32)
+    
     rl_loss = tf.expand_dims(reward, 1) * sample_caption_logprobs
     rl_loss = tf.div(tf.reduce_sum(rl_loss * sample_caption_mask),
                      tf.reduce_sum(sample_caption_mask),
@@ -147,11 +150,6 @@ class SelfCriticalLoss(BaseLoss):
     tf.summary.scalar("losses/rl_loss", rl_loss)
 
     log_tensor("reward", l=locals())
-    log_tensor("sample_probs", l=locals())
-    log_tensor("sample_batch_index", l=locals())
-    log_tensor("sample_seq_index", l=locals())
-    log_tensor("sample_gather_index", l=locals())
-    log_tensor("sample_caption_probs", l=locals())
     log_tensor("rl_loss", l=locals())
     return rl_loss
 

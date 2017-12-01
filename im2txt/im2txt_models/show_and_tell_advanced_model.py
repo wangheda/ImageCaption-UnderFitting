@@ -271,10 +271,16 @@ class ShowAndTellAdvancedModel(object):
         if FLAGS.rl_training:
           # use rl train
           # 1. generate greedy captions
-          greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-            embedding=embedding_map,
-            start_tokens=tf.fill([batch_size], FLAGS.start_token),
-            end_token=FLAGS.end_token)
+          if FLAGS.rl_beam_search_approximation:
+            greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+              embedding=embedding_map,
+              start_tokens=tf.fill([batch_size * FLAGS.beam_width], FLAGS.start_token),
+              end_token=FLAGS.end_token)
+          else:  
+            greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+              embedding=embedding_map,
+              start_tokens=tf.fill([batch_size], FLAGS.start_token),
+              end_token=FLAGS.end_token)
           greedy_decoder = tf.contrib.seq2seq.BasicDecoder(
             cell=lstm_cell,
             helper=greedy_helper,
@@ -387,33 +393,43 @@ class ShowAndTellAdvancedModel(object):
 
     if mode == "train":
       if FLAGS.rl_training == True:
-        model_outputs["greedy_caption_words"] = greedy_outputs.sample_id
-        model_outputs["greedy_caption_lengths"] = greedy_outputs_sequence_lengths
-        print("greedy caption words: ", model_outputs["greedy_caption_words"])
-        print("greedy caption lengths: ", model_outputs["greedy_caption_lengths"])
         if FLAGS.rl_beam_search_approximation:
+          # deal with the greedy captions
+          greedy_caption_words = tf.reshape(greedy_outputs.sample_id, [batch_size, FLAGS.beam_width, -1])
+          model_outputs["greedy_caption_words"] = greedy_caption_words[:,0,:]
+          greedy_caption_lengths = tf.reshape(greedy_outputs_sequence_lengths, [batch_size, FLAGS.beam_width])
+          model_outputs["greedy_caption_lengths"] = greedy_caption_lengths[:,0]
           # get beam search log_probs
-          def gather_tree_py(values, parents):
-            """Gathers path through a tree backwards from the leave nodes. Used
-            to reconstruct beams given their parents."""
-            beam_length = values.shape[0]
-            num_beams = values.shape[1]
-            res = np.zeros_like(values)
-            res[-1, :] = values[-1, :]
-            for beam_id in range(num_beams):
-              parent = parents[-1][beam_id]
-              for level in reversed(range(beam_length - 1)):
-                res[level, beam_id] = values[level][parent]
-                parent = parents[level][parent]
-            return np.array(res).astype(values.dtype)
+          def gather_tree(values, parent_ids):
+            # values: (seq_len, beam_width)
+            # parent_ids: (seq_len, beam_width)
+            (seq_len, beam_width) = get_shape(values)
+            reverse_values = tf.reverse(values,[0])
+            reverse_parent_ids = tf.reverse(parent_ids, [0])
+                          
+            init_time = tf.constant(0, dtype=tf.int32)
+            init_indices = tf.range(0, beam_width)
+            init_score = tf.zeros([1,beam_width], dtype=values.dtype)
+            def condition(time, indices, score):
+              return time < seq_len
 
-          def gather_tree(values, parents):
-            """Tensor version of gather_tree_py"""
-            res = tf.py_func(
-                func=gather_tree_py, inp=[values, parents], Tout=values.dtype)
-            res.set_shape(values.get_shape().as_list())
-            return res
+            def body(time, indices, score):
+              step_score = tf.expand_dims(tf.gather(reverse_values[time], indices),0)
+              next_indices = tf.gather(reverse_parent_ids[time], indices) 
+              next_score = tf.cond(time > 0, 
+                                   lambda : tf.concat([score, step_score], axis=0),
+                                   lambda : step_score)
+              return (time+1, next_indices, next_score)
 
+            res = tf.while_loop(condition,
+                                body,
+                                loop_vars=[init_time, init_indices, init_score],
+                                shape_invariants=[init_time.get_shape(),
+                                                  init_indices.get_shape(),
+                                                  tf.TensorShape([None, beam_width])])
+            extract_values = tf.reverse(res[2], [0])
+            return extract_values
+          
           bsd_outputs = outputs.beam_search_decoder_output
           bsd_scores = tf.map_fn(
                               lambda (x,y): gather_tree(x,y),
@@ -428,13 +444,17 @@ class ShowAndTellAdvancedModel(object):
                               minval=0,
                               maxval=FLAGS.beam_width,
                               dtype=tf.int32)
+          print("sample_caption_words: ", outputs.predicted_ids)
+          print("sample_caption_lengths: ", outputs_sequence_lengths)
+          print("sample_caption_logits: ", bsd_log_probs)
+          print("random_indices: ", random_indices)
           # extract predict
           model_outputs["sample_caption_words"] = tf.map_fn(
                                   lambda (x,y): x[:,tf.squeeze(y)],
                                   (outputs.predicted_ids ,random_indices),
                                   dtype=tf.int32)
           model_outputs["sample_caption_lengths"] = tf.map_fn(
-                                  lambda (x,y): x[:,tf.squeeze(y)],
+                                  lambda (x,y): x[tf.squeeze(y)],
                                   (outputs_sequence_lengths ,random_indices),
                                   dtype=tf.int32)
           # here is log probs, not logits
@@ -444,9 +464,12 @@ class ShowAndTellAdvancedModel(object):
                                   dtype=tf.float32)
         else:
           model_outputs.update(
-              {"sample_caption_words"   : outputs.sample_id,
-               "sample_caption_logits"  : outputs.rnn_output,
-               "sample_caption_lengths" : outputs_sequence_lengths})
+                  {"greedy_caption_words"   : greedy_outputs.sample_id,
+                   "greedy_caption_lengths" : greedy_outputs_sequence_lengths,
+                   "sample_caption_words"   : outputs.sample_id,
+                   "sample_caption_logits"  : outputs.rnn_output,
+                   "sample_caption_lengths" : outputs_sequence_lengths})
+        print("model_outputs: ", model_outputs)
       else:
         logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
         model_outputs["logits"] = logits
