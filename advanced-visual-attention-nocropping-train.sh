@@ -77,7 +77,7 @@ PREV_SUB_MODEL_DIR=$SUB_MODEL_DIR
 PREV_STEPS=$STEPS
 
 SUB_MODEL_DIR="$MODEL_DIR/rl_finetune"
-STEPS=595000
+STEPS=665000
 if [ $command == "cmd:rl_finetune" ]; then
   echo "command is rl_finetune"
   if [ ! -d $SUB_MODEL_DIR ]; then

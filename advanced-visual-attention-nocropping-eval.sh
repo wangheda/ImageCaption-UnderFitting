@@ -13,7 +13,7 @@ VALIDATE_TFRECORD_FILE="${DIR}/data/Newloc_TFRecord_data/validate*.tfrecord"
 VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
 
 MODEL_DIR="${DIR}/model/${model_name}/${sub_dir}"
-for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 12 | tac); do 
+for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 3 | tac); do 
   # the script directory
 
   CHECKPOINT_PATH="${MODEL_DIR}/model.ckpt-$ckpt"
