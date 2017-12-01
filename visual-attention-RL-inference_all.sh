@@ -2,10 +2,10 @@
 
 model_name="show_and_tell_advanced_model_visual_attention_rl_adam_lr5e-5_decay308"
 model=ShowAndTellAdvancedModel
-num_processes=2
-gpu_fraction=0.45
+num_processes=1
+gpu_fraction=1.0
 device=0
-ckpt=840423
+ckpt=840942
 
 # the script directory
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -40,11 +40,10 @@ for mode in TRAIN VALIDATE TEST; do
       --inception_return_tuple=True \
       --use_attention_wrapper=True \
       --attention_mechanism=BahdanauAttention \
-      --num_lstm_layers=1 \
-  done | parallel -j $num_processes
+      --num_lstm_layers=1
+  done
 done
 
 echo output saved to ${BASE_OUTPUT_DIR}
 
 cd ${DIR}
-
