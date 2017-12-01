@@ -177,7 +177,14 @@ class ShowAndTellAdvancedModel(object):
           FLAGS.attention_mechanism)(
               num_units = FLAGS.num_attention_depth,
               memory = middle_layer)
-
+      
+      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
+        bs_middle_layer = tf.contrib.seq2seq.tile_batch(middle_layer, multiplier=FLAGS.beam_width)
+        bs_visual_attention_mechanism = getattr(tf.contrib.seq2seq, 
+          FLAGS.attention_mechanism)(
+              num_units = FLAGS.num_attention_depth,
+              memory = bs_middle_layer)
+        print("tile batch the visual memory!", bs_middle_layer)
 
     if FLAGS.use_semantic_attention:
       if FLAGS.use_separate_embedding_for_semantic_attention:
@@ -221,21 +228,42 @@ class ShowAndTellAdvancedModel(object):
           FLAGS.attention_mechanism)(
               num_units = FLAGS.semantic_attention_word_hash_depth,
               memory = semantic_memory)
+      
+      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
+        bs_semantic_memory = tf.contrib.seq2seq.tile_batch(semantic_memory, multiplier=FLAGS.beam_width)
+        bs_semantic_attention_mechanism = getattr(tf.contrib.seq2seq, 
+          FLAGS.attention_mechanism)(
+              num_units = FLAGS.num_attention_depth,
+              memory = bs_semantic_memory)
+        print("tile batch the semantic memory!", bs_semantic_memory)
 
     if FLAGS.use_attention_wrapper and FLAGS.use_semantic_attention:
       attention_mechanism = [visual_attention_mechanism, semantic_attention_mechanism]
       attention_layer_size = [FLAGS.num_attention_depth, FLAGS.num_attention_depth]
+      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
+        bs_attention_mechanism = [bs_visual_attention_mechanism, bs_semantic_attention_mechanism]
     elif FLAGS.use_attention_wrapper:
       attention_mechanism = visual_attention_mechanism
       attention_layer_size = FLAGS.num_attention_depth
+      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
+        bs_attention_mechanism = bs_visual_attention_mechanism
     elif FLAGS.use_semantic_attention:
       attention_mechanism = semantic_attention_mechanism
       attention_layer_size = FLAGS.num_attention_depth
+      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
+        bs_attention_mechanism = bs_semantic_attention_mechanism
     else:
       attention_mechanism = None
       attention_layer_size = 0
 
     if attention_mechanism is not None:
+      if mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
+        bs_lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
+          lstm_cell,
+          bs_attention_mechanism,
+          attention_layer_size=attention_layer_size,
+          output_attention=FLAGS.output_attention)
+      
       lstm_cell = tf.contrib.seq2seq.AttentionWrapper(
           lstm_cell,
           attention_mechanism,
@@ -281,14 +309,15 @@ class ShowAndTellAdvancedModel(object):
             maximum_iterations=FLAGS.max_caption_length)
 
           # 2. generate sample captions
-          if FLAGS.rl_beam_search_approximation == True:
+          if FLAGS.rl_beam_search_approximation:
             # use beam search results as sample results
             bs_image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings, multiplier=FLAGS.beam_width)
-            bs_zero_state = lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
-            _, bs_initial_state = lstm_cell(bs_image_embeddings, bs_zero_state)
+            bs_zero_state = bs_lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
+            _, bs_initial_state = bs_lstm_cell(bs_image_embeddings, bs_zero_state)
+            print("bs_zero_state")
 
             decoder = tf.contrib.seq2seq.BeamSearchDecoder(
-              cell=lstm_cell,
+              cell=bs_lstm_cell,
               embedding=embedding_map,
               start_tokens=tf.fill([batch_size], FLAGS.start_token),    #[batch_size]
               end_token=FLAGS.end_token,
