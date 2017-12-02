@@ -394,11 +394,10 @@ class ShowAndTellAdvancedModel(object):
     if mode == "train":
       if FLAGS.rl_training == True:
         if FLAGS.rl_beam_search_approximation:
-          # deal with the greedy captions
-          greedy_caption_words = tf.reshape(greedy_outputs.sample_id, [batch_size, FLAGS.beam_width, -1])
-          model_outputs["greedy_caption_words"] = greedy_caption_words[:,0,:]
-          greedy_caption_lengths = tf.reshape(greedy_outputs_sequence_lengths, [batch_size, FLAGS.beam_width])
-          model_outputs["greedy_caption_lengths"] = greedy_caption_lengths[:,0]
+          # (batch_size * beam_width, seq_len)
+          model_outputs["greedy_caption_words"] = greedy_caption_words
+          model_outputs["greedy_caption_lengths"] = greedy_caption_lengths
+
           # get beam search log_probs
           def gather_tree(values, parent_ids):
             # values: (seq_len, beam_width)
@@ -438,30 +437,20 @@ class ShowAndTellAdvancedModel(object):
           bsd_scores = tf.concat([tf.zeros([batch_size, 1, FLAGS.beam_width], dtype=tf.float32), bsd_scores], axis=1)
           bsd_log_probs = bsd_scores[:,1:,:] - bsd_scores[:,0:-1,:]
 
-          # only choose one caption as sample caption
-          random_indices = tf.random_uniform(
-                              shape=[batch_size, 1],
-                              minval=0,
-                              maxval=FLAGS.beam_width,
-                              dtype=tf.int32)
-          print("sample_caption_words: ", outputs.predicted_ids)
+          print("sample_caption_words: ", outputs.predicted_ids) # (batch_size, seq_len, beam_width)
           print("sample_caption_lengths: ", outputs_sequence_lengths)
           print("sample_caption_logits: ", bsd_log_probs)
           print("random_indices: ", random_indices)
-          # extract predict
-          model_outputs["sample_caption_words"] = tf.map_fn(
-                                  lambda (x,y): x[:,tf.squeeze(y)],
-                                  (outputs.predicted_ids ,random_indices),
-                                  dtype=tf.int32)
-          model_outputs["sample_caption_lengths"] = tf.map_fn(
-                                  lambda (x,y): x[tf.squeeze(y)],
-                                  (outputs_sequence_lengths ,random_indices),
-                                  dtype=tf.int32)
-          # here is log probs, not logits
-          model_outputs["sample_caption_logits"] = tf.map_fn(
-                                  lambda (x,y): x[:,tf.squeeze(y)],
-                                  (bsd_log_probs ,random_indices),
-                                  dtype=tf.float32)
+
+          model_outputs["sample_caption_words"] = tf.reshape(
+                            tf.transpose(outputs.predicted_ids, perm=[0,2,1]),
+                            shape=[batch_size * FLAGS.beam_width, -1])
+          model_outputs["sample_caption_lengths"] = tf.reshape(
+                            outputs_sequence_lengths,
+                            shape=[batch_size * FLAGS.beam_width])
+          model_outputs["sample_caption_logits"] = tf.reshape(
+                            tf.transpose(bsd_log_probs, perm=[0,2,1]),
+                            shape=[batch_size * FLAGS.beam_width, -1])
         else:
           model_outputs.update(
                   {"greedy_caption_words"   : greedy_outputs.sample_id,
