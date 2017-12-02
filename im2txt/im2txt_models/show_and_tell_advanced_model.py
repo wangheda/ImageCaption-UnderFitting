@@ -395,8 +395,8 @@ class ShowAndTellAdvancedModel(object):
       if FLAGS.rl_training == True:
         if FLAGS.rl_beam_search_approximation:
           # (batch_size * beam_width, seq_len)
-          model_outputs["greedy_caption_words"] = greedy_caption_words
-          model_outputs["greedy_caption_lengths"] = greedy_caption_lengths
+          model_outputs["greedy_caption_words"] = greedy_outputs.sample_id
+          model_outputs["greedy_caption_lengths"] = greedy_outputs_sequence_lengths
 
           # get beam search log_probs
           def gather_tree(values, parent_ids):
@@ -440,7 +440,6 @@ class ShowAndTellAdvancedModel(object):
           print("sample_caption_words: ", outputs.predicted_ids) # (batch_size, seq_len, beam_width)
           print("sample_caption_lengths: ", outputs_sequence_lengths)
           print("sample_caption_logits: ", bsd_log_probs)
-          print("random_indices: ", random_indices)
 
           model_outputs["sample_caption_words"] = tf.reshape(
                             tf.transpose(outputs.predicted_ids, perm=[0,2,1]),

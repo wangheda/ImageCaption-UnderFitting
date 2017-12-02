@@ -408,6 +408,9 @@ class Im2TxtModel(object):
               pad_or_truncate(sample_caption_words, sample_caption_lengths,
                               axis = -1, max_length = FLAGS.max_caption_length)
 
+        if FLAGS.rl_beam_search_approximation:
+          target_caption_words = tf.contrib.seq2seq.tile_batch(target_caption_words, multiplier=FLAGS.beam_width)
+          target_caption_lengths = tf.contrib.seq2seq.tile_batch(target_caption_lengths, multiplier=FLAGS.beam_width)
         rl_loss_cls = find_class_by_name(FLAGS.rl_training_loss, [losses])
         rl_loss_fn = rl_loss_cls()
         rl_loss = rl_loss_fn.calculate_loss(
