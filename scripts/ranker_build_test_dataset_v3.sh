@@ -7,11 +7,14 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 INFERENCE_ALL="${DIR}/../resources/inference_all_v3.list.test"
 
 # caption
+TRAIN_CAPTIONS_FILE="${DIR}/../data/ai_challenger_caption_train_20170902/caption_train_annotations_20170902.json"
 VALIDATE_CAPTIONS_FILE="${DIR}/../data/ai_challenger_caption_validation_20170910/caption_validation_annotations_20170910.json"
 
 # image directory
 VALIDATE_IMAGE_DIR="${DIR}/../data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
 TEST_IMAGE_DIR="${DIR}/../data/ai_challenger_caption_test1_20170923/caption_test1_images_20170923"
+
+ALL_REFS_FILE="${DIR}/../data/segmented_all_refs.txt"
 
 # directory
 base_dir="${DIR}/../model/combination"
@@ -86,6 +89,8 @@ for part in VALIDATE TEST; do
 
     if [ ! -f $marker_file ]; then
       CUDA_VISIBLE_DEVICES="" python ${DIR}/build_image_caption_tfrecords_mert.py \
+              --annotation_file=$TRAIN_CAPTIONS_FILE \
+              --all_refs_file=$ALL_REFS_FILE \
               --word_counts_input_file=${DIR}/../data/word_counts.txt \
               --input_file=$csv_file \
               --maxlen=$maxlen \

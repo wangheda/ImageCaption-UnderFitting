@@ -21,16 +21,19 @@ from __future__ import print_function
 
 from collections import Counter
 from collections import namedtuple
+from collections import defaultdict
 from datetime import datetime
 import json
 import os.path
 import random
 import sys
+import math
 
 reload(sys)
 sys.setdefaultencoding('utf8')
 import threading
 import jieba
+import jieba.posseg as pseg
 import numpy as np
 import tensorflow as tf
 
@@ -42,6 +45,10 @@ tf.flags.DEFINE_string("input_file", None, "File containing image/pos/neg")
 tf.flags.DEFINE_string("word_counts_input_file",
                        "data/word_counts.txt",
                        "use existing word_counts_file.")
+tf.flags.DEFINE_string("annotation_file", "",
+                       "File that contain annotations.")
+tf.flags.DEFINE_string("all_refs_file", "",
+                       "File that contain segmented refs.")
 
 # output files
 tf.flags.DEFINE_string("output_dir", "data/Ranker_TFRecord_data", "Output directory for tfrecords.")
@@ -58,7 +65,10 @@ tf.flags.DEFINE_string("unknown_word", "<UNK>",
 tf.flags.DEFINE_integer("maxlen", 30,
                        "Maximum length of captions. The captions will be padded to this length.")
 tf.flags.DEFINE_integer("lines_per_image", 20,
-                       "Number of captions per image.")
+                       "The lines of every image.")
+
+tf.flags.DEFINE_boolean("labeled", False,
+                       "Whether the captions are labeled.")
 
 FLAGS = tf.flags.FLAGS
 
@@ -80,6 +90,85 @@ class Vocabulary(object):
             return self._vocab[word]
         else:
             return self._unk_id
+
+class MertFeature:
+    """
+    Generate MERT Features
+    """
+
+    def __init__(self, all_refs):
+        print("initializing mert")
+        self.all_refs = all_refs
+        self.ngrams = [defaultdict(float) for i in xrange(5)]
+        for i in xrange(1,5):
+            for ref in all_refs:
+                if i <= 1:
+                    words = ref.split()
+                else:
+                    words = ["BEG"] + ref.split() + ["END"]
+                for j in xrange(len(words)-i+1):
+                    x = tuple(words[j:j+i])
+                    self.ngrams[i][x] += 1.0
+            mass = 0.0
+            for x in self.ngrams[i].keys():
+                if self.ngrams[i][x] == 1.0:
+                    mass += 0.3
+                    self.ngrams[i][x] = 0.7
+            num_words = 10000 ** i
+            default_val = mass / num_words
+            self.ngrams[i].default_factory = lambda: default_val
+        self.ngrams[0].default_factory = lambda: 1.0
+        print("initialized mert")
+
+    def to_one_hot(self, count, min_val, max_val):
+        f = [0.0] * (max_val - min_val + 1)
+        if count < min_val:
+            count = min_val
+        if count > max_val:
+            count = max_val
+        f[count - min_val] = 1.0
+        return f
+
+    def get_lm_score(self, words, n):
+        if n > 1:
+            words = ["BEG"] + words + ["END"]
+        score = 0.0
+        for j in xrange(len(words)-n+1):
+            x = tuple(words[j:j+n])
+            y = tuple(words[j:j+n-1])
+            p = self.ngrams[n][x] / self.ngrams[n-1][y]
+            score += math.log(p)
+        return score
+        
+    def get_features(self, caption):
+        caption = caption.strip().replace(u'。','')
+        words = [w for w in jieba.cut(caption, cut_all=False)]
+        word_tags = [(w,t) for w,t in pseg.cut(caption)]
+
+        sent_length1 = len(caption)
+        sent_length2 = len(words)
+        count_n = len([1 for w,t in word_tags if t == "n"])
+        count_v = len([1 for w,t in word_tags if t == "v"])
+        count_uj = len([1 for w,t in word_tags if t == "uj"])
+        lm_score1 = self.get_lm_score(words, n=1)
+        lm_score2 = self.get_lm_score(words, n=2)
+        lm_score3 = self.get_lm_score(words, n=3)
+        lm_score4 = self.get_lm_score(words, n=4)
+        avg_freq = math.log(sum([self.ngrams[1][(w,)] for w in words]) / (len(words) + 1e-9))
+
+        features = []
+        features.extend(self.to_one_hot(sent_length1, 15, 34))
+        features.extend(self.to_one_hot(sent_length2, 6, 20))
+        features.extend(self.to_one_hot(count_n, 0, 5))
+        features.extend(self.to_one_hot(count_v, 0, 5))
+        features.extend(self.to_one_hot(count_uj, 0, 5))
+        features.append(lm_score1)
+        features.append(lm_score2)
+        features.append(lm_score3)
+        features.append(lm_score4)
+        features.append(avg_freq)
+        return features
+  
 
 def load_vocab(vocab_file):
     if not tf.gfile.Exists(vocab_file):
@@ -149,7 +238,7 @@ def pad_or_truncate(input_caption_ids, maxlen):
             seqlens.append(len(c))
     return seqlens, caption_ids
 
-def _to_sequence_example(image_id, image_filename, image_pos_captions, image_neg_captions, decoder, vocab):
+def _to_sequence_example(image_id, image_filename, image_captions, image_features, image_labels, decoder, vocab):
     """Builds a SequenceExample proto for an image-caption pair.
     Args:
       image: An ImageMetadata object.
@@ -162,26 +251,35 @@ def _to_sequence_example(image_id, image_filename, image_pos_captions, image_neg
         encoded_image = f.read()
     try:
         decoder.decode_jpeg(encoded_image)
+
     except (tf.errors.InvalidArgumentError, AssertionError):
         print("Skipping file with invalid JPEG data: %s" % image.filename)
         return None
 
-    assert len(image_pos_captions) == FLAGS.lines_per_image
-    assert len(image_neg_captions) == FLAGS.lines_per_image
+    if len(image_captions) < FLAGS.lines_per_image:
+        extend_length = FLAGS.lines_per_image - len(image_captions)
+        image_captions.extend([[]] * extend_length)
+        image_features.extend([[0.0]*58] * extend_length)
+        image_labels.extend([0.0] * extend_length)
 
-    pos_caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image_pos_captions]
-    neg_caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image_neg_captions]
+    assert len(image_captions) == FLAGS.lines_per_image
+    assert len(image_features) == FLAGS.lines_per_image
+    assert len(image_labels) == FLAGS.lines_per_image
 
-    pos_seqlens, pos_caption_ids = pad_or_truncate(pos_caption_ids, FLAGS.maxlen)
-    neg_seqlens, neg_caption_ids = pad_or_truncate(neg_caption_ids, FLAGS.maxlen)
+    caption_ids = [[vocab.word_to_id(word) for word in caption] for caption in image_captions]
+    seqlens, caption_ids = pad_or_truncate(caption_ids, FLAGS.maxlen)
 
+    caption_features = []
+    for features in image_features:
+        caption_features.extend(features)
+       
     features = tf.train.Features(feature={
         "image/id": _bytes_feature(image_id),
         "image/data": _bytes_feature(encoded_image),
-        "image/pos_seqlens": tf.train.Feature(int64_list=tf.train.Int64List(value=pos_seqlens)),
-        "image/neg_seqlens": tf.train.Feature(int64_list=tf.train.Int64List(value=neg_seqlens)),
-        "image/pos_captions": tf.train.Feature(int64_list=tf.train.Int64List(value=pos_caption_ids)),
-        "image/neg_captions": tf.train.Feature(int64_list=tf.train.Int64List(value=neg_caption_ids)),
+        "image/seqlens": tf.train.Feature(int64_list=tf.train.Int64List(value=seqlens)),
+        "image/captions": tf.train.Feature(int64_list=tf.train.Int64List(value=caption_ids)),
+        "image/features": tf.train.Feature(float_list=tf.train.FloatList(value=caption_features)),
+        "image/labels": tf.train.Feature(float_list=tf.train.FloatList(value=image_labels)),
     })
 
     example = tf.train.Example(features=features)
@@ -204,8 +302,8 @@ def _process_dataset(image_metadata, vocab):
     images_per_file = 500
     strings = []
     counter = 0
-    for image_id, filename, pos_captions, neg_captions in image_metadata:
-        sequence_example = _to_sequence_example(image_id, filename, pos_captions, neg_captions, decoder, vocab)
+    for image_id, filename, captions, features, labels in image_metadata:
+        sequence_example = _to_sequence_example(image_id, filename, captions, features, labels, decoder, vocab)
         if sequence_example is not None:
             strings.append(sequence_example.SerializeToString())
 
@@ -220,31 +318,39 @@ def _process_dataset(image_metadata, vocab):
 def _process_caption_jieba(caption):
     return jieba.cut(caption, cut_all=False)
 
-def _load_and_process_metadata(input_file, image_dir):
+def _load_and_process_metadata(input_file, image_dir, mert):
     image_ids = set([])
     image_filenames = {}
-    image_pos_captions = {}
-    image_neg_captions = {}
+    image_captions = {}
+    image_features = {}
+    image_labels = {}
 
     with open(input_file, 'r') as F:
         for line in F:
-            image_id, pos, neg = line.strip().split("\t")
-            pos = pos.decode("utf8")
-            neg = neg.decode("utf8")
+            if FLAGS.labeled == True:
+              image_id, caption, label = line.strip().split("\t")
+              label = float(label)
+            else:
+              image_id, caption = line.strip().split("\t")
+              label = 0.0
+            caption = caption.decode("utf8")
             if image_id not in image_ids:
                 image_ids.add(image_id)
                 image_filenames[image_id] = os.path.join(image_dir, image_id + ".jpg")
-                image_pos_captions[image_id] = []
-                image_neg_captions[image_id] = []
-            image_pos_captions[image_id].append(_process_caption_jieba(pos))
-            image_neg_captions[image_id].append(_process_caption_jieba(neg))
+                image_captions[image_id] = []
+                image_features[image_id] = []
+                image_labels[image_id] = []
+            image_captions[image_id].append(_process_caption_jieba(caption))
+            image_features[image_id].append(mert.get_features(caption))
+            image_labels[image_id].append(label)
                 
     image_metadata = []
     for image_id in image_ids:
         filename = image_filenames[image_id]
-        pos_captions = image_pos_captions[image_id]
-        neg_captions = image_neg_captions[image_id]
-        image_metadata.append((image_id, filename, pos_captions, neg_captions))
+        captions = image_captions[image_id]
+        features = image_features[image_id]
+        labels = image_labels[image_id]
+        image_metadata.append((image_id, filename, captions, features, labels))
 
     print("Finished processing captions for %d images in %s" %
           (len(image_ids), input_file))
@@ -253,11 +359,32 @@ def _load_and_process_metadata(input_file, image_dir):
 
 def main(unused_argv):
 
+    with open(FLAGS.annotation_file, 'r') as f:
+        caption_data = json.load(f)
+
+    if os.path.exists(FLAGS.all_refs_file):
+        with open(FLAGS.all_refs_file) as F:
+            all_refs = [line.decode("utf8").strip() for line in F.readlines()]
+    else:
+        print("segmenting refs")
+        all_refs = []
+        for data in caption_data:
+            captions = data['caption']
+            for caption in captions:
+                w = jieba.cut(caption.strip().replace(u'。',''), cut_all=False)
+                p = ' '.join(w)
+                all_refs.append(p)
+        print("segmented refs")
+        with open(FLAGS.all_refs_file, "w") as F:
+            F.writelines([line.encode("utf8")+u"\n" for line in all_refs])
+
+    mert = MertFeature(all_refs)
+
     if not tf.gfile.IsDirectory(FLAGS.output_dir):
         tf.gfile.MakeDirs(FLAGS.output_dir)
 
     # Load image metadata from caption files.
-    dataset = _load_and_process_metadata(FLAGS.input_file, FLAGS.image_dir)
+    dataset = _load_and_process_metadata(FLAGS.input_file, FLAGS.image_dir, mert)
     # Create vocabulary from the training captions.
     vocab = load_vocab(FLAGS.word_counts_input_file)
     # process dataset

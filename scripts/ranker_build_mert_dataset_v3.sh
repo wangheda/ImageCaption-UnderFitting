@@ -14,6 +14,8 @@ TRAIN_CAPTIONS_FILE="${DIR}/../data/ai_challenger_caption_train_20170902/caption
 VALIDATE_IMAGE_DIR="${DIR}/../data/ai_challenger_caption_validation_20170910/caption_validation_images_20170910"
 TRAIN_IMAGE_DIR="${DIR}/../data/ai_challenger_caption_train_20170902/caption_train_images_20170902"
 
+ALL_REFS_FILE="${DIR}/../data/segmented_all_refs.txt"
+
 # directory
 base_dir="${DIR}/../model/combination"
 hash_dir1=$(sha1sum $INFERENCE_ALL | cut -d' ' -f 1)
@@ -82,7 +84,7 @@ done
 
 for part in TRAIN VALIDATE; do
   for c in 0 1 2 3 4 5 6 7 8 9 a b c d e f; do
-    csv_filelist=${base_dir}/${hash_dir1}/filelist-${part}-${c}
+    csv_filelist=${base_dir}/${hash_dir1}/filelist-${part}-${c}.mert_v3
     [ -f $csv_filelist ] && rm $csv_filelist
 
     for model in $(cat $INFERENCE_ALL); do 
@@ -122,7 +124,7 @@ for part in TRAIN VALIDATE; do
       fi
     done
 
-    csv_file=${base_dir}/${hash_dir1}/csv-${part}-${c}
+    csv_file=${base_dir}/${hash_dir1}/csv-${part}-${c}.mert_v3
     [ ! -f $csv_file ] && cat $(cat $csv_filelist) | sort > $csv_file
     
   done
@@ -150,29 +152,22 @@ for part in VALIDATE TRAIN; do
 
   for c in $LIST; do
     refcsv_file=${ref_dir}/refcsv-${part}-${c}
-    csv_file=${base_dir}/${hash_dir1}/csv-${part}-${c}
-    triplets_file=${base_dir}/${hash_dir1}/triplets-${part}-${c}.v3
+    csv_file=${base_dir}/${hash_dir1}/csv-${part}-${c}.mert_v3
+    csv_filelist=${base_dir}/${hash_dir1}/filelist-${part}-${c}.mert_v3
+    lines_per_image=$(wc -l $csv_filelist | cut -d' ' -f 1)
 
-    if [ ! -f $triplets_file ]; then
-      python ${DIR}/build_image_pos_neg_triplets.py \
-              --true_captions=$refcsv_file \
-              --proposed_captions=$csv_file \
-              --output_file=$triplets_file \
-              --strategy1=$strategy1 \
-              --strategy2=$strategy2 \
-              --strategy3=$strategy3
-    fi
-
-    marker_file=${base_dir}/${hash_dir1}/marker-${part}-${c}.v3
+    marker_file=${base_dir}/${hash_dir1}/marker-${part}-${c}.mert_v3
     if [ ! -f $marker_file ]; then
-      CUDA_VISIBLE_DEVICES="" python ${DIR}/build_image_pos_neg_tfrecords.py \
+      CUDA_VISIBLE_DEVICES="" python ${DIR}/build_image_caption_tfrecords_mert.py \
+              --labeled=True \
+              --annotation_file=$TRAIN_CAPTIONS_FILE \
+              --all_refs_file=$ALL_REFS_FILE \
               --word_counts_input_file=${DIR}/../data/word_counts.txt \
-              --input_file=$triplets_file \
-              --num_shards=$num_shards \
+              --input_file=$csv_file \
               --maxlen=$maxlen \
-              --lines_per_image=$(($strategy1 + $strategy2 + $strategy3)) \
               --image_dir=$image_dir \
-              --output_prefix="rankertrain-${part}-${c}" \
+              --output_prefix="rankermert-${part}-${c}" \
+              --lines_per_image=$lines_per_image \
               --output_dir=$output_dir \
       && touch $marker_file
     fi
