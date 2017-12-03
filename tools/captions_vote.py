@@ -29,7 +29,7 @@ if __name__ == "__main__":
     result = {}
     result['image_id'] = image_id
     result['caption'] = final_caption
-    print >> sys.stderr, image_id, final_caption, final_count
+    #print >> sys.stderr, image_id, final_caption, final_count
     final_json_list.append(result)
 
   sys.stdout.write(json.dumps(final_json_list, ensure_ascii=False, indent=4).encode("utf8"))
