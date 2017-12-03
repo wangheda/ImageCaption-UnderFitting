@@ -47,7 +47,4 @@ done
 
 python ${DIR}/../tools/captions_vote.py ${OUTPUT_DIR}/run-*.json > ${OUTPUT_DIR}/out.json
 
-if [ ! -f ${OUTPUT_DIR}/out.eval ]; then
-  python ${DIR}/../tools/eval/run_evaluations.py --submit ${OUTPUT_DIR}/out.json --ref $VALIDATE_REFERENCE_FILE | tee ${OUTPUT_DIR}/out.eval | grep ^Eval
-  echo eval result saved to ${OUTPUT_DIR}/out.eval
-fi
+echo $OUTPUT_DIR >> test2_location.list
