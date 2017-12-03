@@ -9,7 +9,7 @@ device=1
 model=ShowAndTellAdvancedModel
 
 MODEL_DIR="${DIR}/model/${model_name}"
-for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 8000 | tail -n 20 | tac); do 
+for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 10000 | tail -n 4 | tac); do 
   # the script directory
   VALIDATE_FILE_PATTERN="${DIR}/data/Newloc_TFRecord_data/validate*.tfrecord"
   VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
