@@ -4,16 +4,16 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 sub_dir=$1
 
-model_name="localization_attention_model"
+model_name="top_down_attention_model"
 num_processes=1
 device=1
-model=ShowAndTellAdvancedModel
+model=TopDownAttentionModel
 
 VALIDATE_TFRECORD_FILE="${DIR}/data/Newloc_TFRecord_data/validate*.tfrecord"
 VALIDATE_REFERENCE_FILE="${DIR}/data/ai_challenger_caption_validation_20170910/reference.json"
 
 MODEL_DIR="${DIR}/model/${model_name}/${sub_dir}"
-for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 3 | tac); do 
+for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail -n 10 | tac); do 
   # the script directory
 
   CHECKPOINT_PATH="${MODEL_DIR}/model.ckpt-$ckpt"
@@ -30,14 +30,15 @@ for ckpt in $(ls ${MODEL_DIR} | python ${DIR}/tools/every_n_step.py 20000 | tail
       --vocab_file=${DIR}/data/word_counts.txt \
       --output=${OUTPUT_DIR}/out.json \
       --model=${model} \
+      --num_lstm_units=512 \
+      --num_attention_depth=512 \
+      --embedding_size=512 \
       --localization_attention=True \
       --reader=ImageCaptionTestReader \
-      --batch_size=10 \
       --cropping_images=False \
+      --batch_size=10 \
+      --swap_memory=True \
       --inception_return_tuple=True \
-      --use_attention_wrapper=True \
-      --attention_mechanism=BahdanauAttention \
-      --num_lstm_layers=1 \
       --support_ingraph=True
     echo output saved to ${OUTPUT_DIR}/out.json
   fi

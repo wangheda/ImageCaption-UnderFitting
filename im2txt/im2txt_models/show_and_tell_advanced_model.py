@@ -1,5 +1,6 @@
 
 import tensorflow as tf
+import numpy as np
 from tensorflow.python.layers.core import Dense
 import custom_rnn_cell
 
@@ -169,14 +170,14 @@ class ShowAndTellAdvancedModel(object):
 
     if FLAGS.use_attention_wrapper:
       # If mode is inference, copy the middle layer many times
-      if mode == "inference":
+      if mode == "inference" \
+          or (mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation) :
         middle_layer = tf.contrib.seq2seq.tile_batch(middle_layer, multiplier=FLAGS.beam_width)
 
       visual_attention_mechanism = getattr(tf.contrib.seq2seq, 
           FLAGS.attention_mechanism)(
               num_units = FLAGS.num_attention_depth,
               memory = middle_layer)
-
 
     if FLAGS.use_semantic_attention:
       if FLAGS.use_separate_embedding_for_semantic_attention:
@@ -213,7 +214,8 @@ class ShowAndTellAdvancedModel(object):
       else:
         raise Exception("Unknown semantic_attention_type!")
 
-      if mode == "inference":
+      if mode == "inference" \
+          or (mode == "train" and FLAGS.rl_training and FLAGS.rl_beam_search_approximation) : 
         semantic_memory = tf.contrib.seq2seq.tile_batch(semantic_memory, multiplier=FLAGS.beam_width)
 
       semantic_attention_mechanism = getattr(tf.contrib.seq2seq, 
@@ -246,8 +248,13 @@ class ShowAndTellAdvancedModel(object):
       batch_size = get_shape(image_embeddings)[0]
 
       if mode == "train":
-        zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
-        _, initial_state = lstm_cell(image_embeddings, zero_state)
+        if FLAGS.rl_training and FLAGS.rl_beam_search_approximation:
+          image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings, multiplier=FLAGS.beam_width)
+          zero_state = lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
+          _, initial_state = lstm_cell(image_embeddings, zero_state)
+        else:
+          zero_state = lstm_cell.zero_state(batch_size=batch_size, dtype=tf.float32)
+          _, initial_state = lstm_cell(image_embeddings, zero_state)
       elif mode == "inference":
         image_embeddings = tf.contrib.seq2seq.tile_batch(image_embeddings, multiplier=FLAGS.beam_width)
         zero_state = lstm_cell.zero_state(batch_size=batch_size*FLAGS.beam_width, dtype=tf.float32)
@@ -261,13 +268,19 @@ class ShowAndTellAdvancedModel(object):
       # lstm_scope.reuse_variables()
 
       if mode == "train":
-        if FLAGS.rl_training == True:
+        if FLAGS.rl_training:
           # use rl train
           # 1. generate greedy captions
-          greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
-            embedding=embedding_map,
-            start_tokens=tf.fill([batch_size], FLAGS.start_token),
-            end_token=FLAGS.end_token)
+          if FLAGS.rl_beam_search_approximation:
+            greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+              embedding=embedding_map,
+              start_tokens=tf.fill([batch_size * FLAGS.beam_width], FLAGS.start_token),
+              end_token=FLAGS.end_token)
+          else:  
+            greedy_helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(
+              embedding=embedding_map,
+              start_tokens=tf.fill([batch_size], FLAGS.start_token),
+              end_token=FLAGS.end_token)
           greedy_decoder = tf.contrib.seq2seq.BasicDecoder(
             cell=lstm_cell,
             helper=greedy_helper,
@@ -280,10 +293,60 @@ class ShowAndTellAdvancedModel(object):
             maximum_iterations=FLAGS.max_caption_length)
 
           # 2. generate sample captions
-          helper = tf.contrib.seq2seq.SampleEmbeddingHelper(
-            embedding=embedding_map,
-            start_tokens=tf.fill([batch_size], FLAGS.start_token),
-            end_token=FLAGS.end_token)
+          if FLAGS.rl_beam_search_approximation:
+            # use beam search results as sample results
+            # first generate bs caption ids
+            bs_decoder = tf.contrib.seq2seq.BeamSearchDecoder(
+              cell=lstm_cell,
+              embedding=embedding_map,
+              start_tokens=tf.fill([batch_size], FLAGS.start_token),    #[batch_size]
+              end_token=FLAGS.end_token,
+              initial_state=initial_state,
+              beam_width=FLAGS.beam_width,
+              output_layer=output_layer,
+              length_penalty_weight=0.0)
+
+            bs_outputs, _ , bs_outputs_sequence_lengths = tf.contrib.seq2seq.dynamic_decode(
+              decoder=bs_decoder,
+              output_time_major=False,
+              impute_finished=False,
+              maximum_iterations=FLAGS.max_caption_length)
+
+            bs_sample_caption = bs_outputs["bs_results"].predicted_ids # (batch_size, seq_len, beam_width)
+            bs_sample_caption = tf.transpose(bs_sample_caption, perm=[0,2,1])
+            bs_sample_caption = tf.reshape(bs_sample_caption, shape=[batch_size * FLAGS.beam_width, -1])
+
+            bs_sample_seqs = tf.concat([
+                                  tf.constant(FLAGS.start_token, shape=[batch_size * FLAGS.beam_width, 1]),
+                                  bs_sample_caption],
+                                  axis=1)
+            bs_sample_seqs = tf.stop_gradient(bs_sample_seqs)
+            bs_sample_caption_embeddings = tf.nn.embedding_lookup(embedding_map, bs_sample_seqs)
+
+            bs_sample_caption_lengths = tf.reshape(bs_outputs_sequence_lengths, shape=[batch_size * FLAGS.beam_width])
+
+            # then us id to generate probs
+            helper = tf.contrib.seq2seq.TrainingHelper(
+              inputs=bs_sample_caption_embeddings,
+              sequence_length=bs_outputs_sequence_lengths)
+
+            decoder = tf.contrib.seq2seq.BasicDecoder(
+              cell=lstm_cell,
+              helper=helper,
+              initial_state=initial_state,
+              output_layer=output_layer)
+
+          else:
+            helper = tf.contrib.seq2seq.SampleEmbeddingHelper(
+              embedding=embedding_map,
+              start_tokens=tf.fill([batch_size], FLAGS.start_token),
+              end_token=FLAGS.end_token)
+            decoder = tf.contrib.seq2seq.BasicDecoder(
+              cell=lstm_cell,
+              helper=helper,
+              initial_state=initial_state,
+              output_layer=output_layer)
+
         else:
           # use cross entropy
           sequence_length = tf.reduce_sum(input_mask, 1)
@@ -326,11 +389,11 @@ class ShowAndTellAdvancedModel(object):
               inputs=seq_embeddings,
               sequence_length=sequence_length)
 
-        decoder = tf.contrib.seq2seq.BasicDecoder(
-          cell=lstm_cell,
-          helper=helper,
-          initial_state=initial_state,
-          output_layer=output_layer)
+          decoder = tf.contrib.seq2seq.BasicDecoder(
+            cell=lstm_cell,
+            helper=helper,
+            initial_state=initial_state,
+            output_layer=output_layer)
 
       elif mode == "inference":
         decoder = tf.contrib.seq2seq.BeamSearchDecoder(
@@ -362,11 +425,21 @@ class ShowAndTellAdvancedModel(object):
 
     if mode == "train":
       if FLAGS.rl_training == True:
-        return {"sample_caption_words"   : outputs.sample_id,
-                "sample_caption_logits"  : outputs.rnn_output,
-                "sample_caption_lengths" : outputs_sequence_lengths,
-                "greedy_caption_words"   : greedy_outputs.sample_id,
-                "greedy_caption_lengths" : greedy_outputs_sequence_lengths}
+        if FLAGS.rl_beam_search_approximation:
+          # (batch_size * beam_width, seq_len)
+          model_outputs["greedy_caption_words"] = greedy_outputs.sample_id
+          model_outputs["greedy_caption_lengths"] = greedy_outputs_sequence_lengths
+          model_outputs["sample_caption_words"] = bs_sample_caption
+          model_outputs["sample_caption_lengths"] = bs_sample_caption_lengths
+          model_outputs["sample_caption_logits"] = outputs.rnn_output
+        else:
+          model_outputs.update(
+                  {"greedy_caption_words"   : greedy_outputs.sample_id,
+                   "greedy_caption_lengths" : greedy_outputs_sequence_lengths,
+                   "sample_caption_words"   : outputs.sample_id,
+                   "sample_caption_logits"  : outputs.rnn_output,
+                   "sample_caption_lengths" : outputs_sequence_lengths})
+        print("model_outputs: ", model_outputs)
       else:
         logits = tf.reshape(outputs.rnn_output, [-1, FLAGS.vocab_size])
         model_outputs["logits"] = logits

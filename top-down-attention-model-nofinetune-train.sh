@@ -5,9 +5,9 @@ DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 command="cmd:$1"
 
-device=1
-model=ShowAndTellAdvancedModel
-model_dir_name=localization_attention_model
+device=0
+model=TopDownAttentionModel
+model_dir_name=top_down_attention_model
 
 INCEPTION_CHECKPOINT="${DIR}/pretrained_model/inception_v3/inception_v3.ckpt"
 TFRECORD_DIR="${DIR}/data/Newloc_TFRecord_data"
@@ -19,7 +19,7 @@ MODEL_DIR="${DIR}/model/$model_dir_name"
 cd im2txt
 
 SUB_MODEL_DIR="$MODEL_DIR/mle_train"
-STEPS=35000
+STEPS=400000
 if [ $command == "cmd:train" ]; then
   echo "command is train"
   CUDA_VISIBLE_DEVICES=$device python train.py \
@@ -27,49 +27,20 @@ if [ $command == "cmd:train" ]; then
     --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
     --train_dir="${SUB_MODEL_DIR}" \
     --model=${model} \
-    --localization_attention=True \
-    --initial_learning_rate=1.0 \
-    --learning_rate_decay_factor=0.66 \
+    --batch_size=42 \
+    --optimizer=Momentum \
+    --initial_learning_rate=0.1 \
+    --learning_rate_decay_factor=0.9 \
+    --num_epochs_per_decay=5.0 \
     --inception_return_tuple=True \
     --use_scheduled_sampling=False \
-    --use_attention_wrapper=True \
-    --attention_mechanism=BahdanauAttention \
-    --num_lstm_layers=1 \
     --support_ingraph=True \
-    --reader=ImageCaptionReader \
-    --cropping_images=False \
-    --number_of_steps=$STEPS
-fi
-PREV_SUB_MODEL_DIR=$SUB_MODEL_DIR
-PREV_STEPS=$STEPS
-
-SUB_MODEL_DIR="$MODEL_DIR/mle_finetune"
-STEPS=525000
-if [ $command == "cmd:finetune" ]; then
-  echo "command is finetune"
-  if [ ! -d $SUB_MODEL_DIR ]; then
-    mkdir -p $SUB_MODEL_DIR
-    cp ${PREV_SUB_MODEL_DIR}/model.ckpt-${PREV_STEPS}.* ${SUB_MODEL_DIR}/
-    echo "model_checkpoint_path: \"${PREV_SUB_MODEL_DIR}/model.ckpt-${PREV_STEPS}\"" > ${SUB_MODEL_DIR}/checkpoint
-  fi
-
-  CUDA_VISIBLE_DEVICES=$device python train.py \
-    --input_file_pattern="${TFRECORD_DIR}/train-?????-of-?????.tfrecord" \
-    --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
-    --train_dir="${SUB_MODEL_DIR}" \
-    --model=${model} \
-    --localization_attention=True \
-    --initial_learning_rate=1.0 \
-    --learning_rate_decay_factor=0.66 \
-    --inception_return_tuple=True \
-    --use_scheduled_sampling=False \
-    --use_attention_wrapper=True \
-    --attention_mechanism=BahdanauAttention \
-    --num_lstm_layers=1 \
-    --support_ingraph=True \
-    --train_inception_with_decay=True \
+    --num_lstm_units=512 \
+    --num_attention_depth=512 \
+    --embedding_size=512 \
     --swap_memory=True \
     --reader=ImageCaptionReader \
+    --localization_attention=True \
     --cropping_images=False \
     --number_of_steps=$STEPS
 fi
@@ -77,7 +48,7 @@ PREV_SUB_MODEL_DIR=$SUB_MODEL_DIR
 PREV_STEPS=$STEPS
 
 SUB_MODEL_DIR="$MODEL_DIR/rl_finetune"
-STEPS=665000
+STEPS=500000
 if [ $command == "cmd:rl_finetune" ]; then
   echo "command is rl_finetune"
   if [ ! -d $SUB_MODEL_DIR ]; then
@@ -91,21 +62,24 @@ if [ $command == "cmd:rl_finetune" ]; then
     --inception_checkpoint_file="${INCEPTION_CHECKPOINT}" \
     --train_dir="${SUB_MODEL_DIR}" \
     --model=${model} \
-    --localization_attention=True \
-    --initial_learning_rate=1.0 \
-    --learning_rate_decay_factor=0.66 \
+    --batch_size=42 \
+    --optimizer=Momentum \
+    --initial_learning_rate=0.1 \
+    --learning_rate_decay_factor=0.9 \
+    --num_epochs_per_decay=5.0 \
     --inception_return_tuple=True \
-    --use_scheduled_sampling=False \
-    --use_attention_wrapper=True \
-    --attention_mechanism=BahdanauAttention \
-    --num_lstm_layers=1 \
     --support_ingraph=True \
+    --num_lstm_units=512 \
+    --num_attention_depth=512 \
+    --embedding_size=512 \
     --reader=ImageCaptionReader \
-    --multiple_references=True \
+    --localization_attention=True \
     --cropping_images=False \
+    --multiple_references=True \
     --rl_training=True \
     --rl_training_loss="SelfCriticalLoss" \
     --document_frequency_file="${DOCUMENT_FREQUENCY_FILE}" \
+    --exclude_variable_patterns='OptimizeLoss/InceptionV3/.*' \
     --number_of_steps=$STEPS
 fi
 PREV_SUB_MODEL_DIR=$SUB_MODEL_DIR
@@ -113,6 +87,5 @@ PREV_STEPS=$STEPS
 
 if [ $command == "cmd:all" ]; then
   bash -x ${DIR}/$0 train
-  bash -x ${DIR}/$0 finetune
   bash -x ${DIR}/$0 rl_finetune
 fi

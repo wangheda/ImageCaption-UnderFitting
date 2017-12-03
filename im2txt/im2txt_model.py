@@ -98,11 +98,14 @@ tf.flags.DEFINE_string("vocab_file", "",
 # reinforcement learning config
 tf.flags.DEFINE_boolean("rl_training", False,
                         "Train with reinforcement learning.")
+tf.flags.DEFINE_boolean("rl_beam_search_approximation", False,
+                        "Whether use beam search to generate sample captions.")
 tf.flags.DEFINE_boolean("rl_training_along_with_mle", False,
                         "Train with reinforcement learning with the mle (need to use it along with rl_training).")
 tf.flags.DEFINE_string("rl_training_loss", "SelfCriticalLoss",
                         "Type of loss in reinforcement learning.")
 tf.flags.DEFINE_integer("max_ref_length", 30, "Max reference length.")
+
 
 # image config
 tf.flags.DEFINE_boolean("l2_normalize_image", False,
@@ -391,7 +394,7 @@ class Im2TxtModel(object):
         if get_shape_as_list(target_caption_words)[-1] is None:
           target_caption_words, target_caption_lengths = \
               pad_or_truncate(target_caption_words, target_caption_lengths,
-                              axis = -1, max_length = FLAGS.max_caption_length)
+                              axis = -1, max_length = FLAGS.max_ref_length)
         if get_shape_as_list(greedy_caption_words)[-1] is None:
           greedy_caption_words, greedy_caption_lengths = \
               pad_or_truncate(greedy_caption_words, greedy_caption_lengths,
@@ -399,12 +402,15 @@ class Im2TxtModel(object):
         if get_shape_as_list(sample_caption_logits)[1] is None:
           sample_caption_logits, _ = \
               pad_or_truncate(sample_caption_logits, sample_caption_lengths,
-                              axis = 1, max_length = FLAGS.max_ref_length)
+                              axis = 1, max_length = FLAGS.max_caption_length)
         if get_shape_as_list(sample_caption_words)[-1] is None:
           sample_caption_words, sample_caption_lengths = \
               pad_or_truncate(sample_caption_words, sample_caption_lengths,
-                              axis = -1, max_length = FLAGS.max_ref_length)
+                              axis = -1, max_length = FLAGS.max_caption_length)
 
+        if FLAGS.rl_beam_search_approximation:
+          target_caption_words = tf.contrib.seq2seq.tile_batch(target_caption_words, multiplier=FLAGS.beam_width)
+          target_caption_lengths = tf.contrib.seq2seq.tile_batch(target_caption_lengths, multiplier=FLAGS.beam_width)
         rl_loss_cls = find_class_by_name(FLAGS.rl_training_loss, [losses])
         rl_loss_fn = rl_loss_cls()
         rl_loss = rl_loss_fn.calculate_loss(

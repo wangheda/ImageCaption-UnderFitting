@@ -51,7 +51,12 @@ tf.flags.DEFINE_string("validate_localizations_file", "data/bottom_up_attention/
 
 tf.flags.DEFINE_string("test1_image_dir", "data/ai_challenger_caption_test1_20170923/caption_test1_images_20170923",
                        "Test image directory.")
-tf.flags.DEFINE_string("test1_localizations_file", "data/bottom_up_attention/aichallenger_test.tsv.small",
+tf.flags.DEFINE_string("test1_localizations_file", "data/bottom_up_attention/aichallenger_test1.tsv.small",
+                       "Test captions TSV file.")
+
+tf.flags.DEFINE_string("test2_image_dir", "data/ai_challenger_caption_test_b_20171120/caption_test_b_images_20171120",
+                       "Test image directory.")
+tf.flags.DEFINE_string("test2_localizations_file", "data/bottom_up_attention/aichallenger_test2.tsv.small",
                        "Test captions TSV file.")
 
 

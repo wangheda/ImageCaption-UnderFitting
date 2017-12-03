@@ -4,7 +4,7 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # input
-INFERENCE_ALL="${DIR}/../resources/inference_all.list.test"
+INFERENCE_ALL="${DIR}/../resources/inference_all_v3.list.test"
 
 # caption
 VALIDATE_CAPTIONS_FILE="${DIR}/../data/ai_challenger_caption_validation_20170910/caption_validation_annotations_20170910.json"
@@ -46,7 +46,7 @@ for part in VALIDATE TEST; do
   fi
 
   for c in $LIST; do
-    csv_filelist=${base_dir}/${hash_dir1}/filelist-${part}-${c}.test
+    csv_filelist=${base_dir}/${hash_dir1}/filelist-${part}-${c}.test_v3
     [ -f $csv_filelist ] && rm $csv_filelist
 
     for model in $(cat $INFERENCE_ALL); do 
@@ -72,20 +72,20 @@ for part in VALIDATE TEST; do
       fi
     done
 
-    csv_file=${base_dir}/${hash_dir1}/csv-${part}-${c}.test
+    csv_file=${base_dir}/${hash_dir1}/csv-${part}-${c}.test_v3
     [ ! -f $csv_file ] && cat $(cat $csv_filelist) | sort > $csv_file
 
-    output_dir=${DIR}/../data/Ranker_TFRecord_data/${hash_dir1}
+    output_dir=${DIR}/../data/Ranker_TFRecord_data_v3/${hash_dir1}
     image_dir=$IMAGE_DIR
 
-    marker_file=${base_dir}/${hash_dir1}/marker-${part}-${c}.test
+    marker_file=${base_dir}/${hash_dir1}/marker-${part}-${c}.test_v3
     maxlen=30
     model_count=$(wc -l $csv_filelist | cut -d' ' -f 1)
     num_candidates=3
     lines_per_image=$(($model_count * $num_candidates))
 
     if [ ! -f $marker_file ]; then
-      CUDA_VISIBLE_DEVICES="" python ${DIR}/build_image_caption_tfrecords.py \
+      CUDA_VISIBLE_DEVICES="" python ${DIR}/build_image_caption_tfrecords_mert.py \
               --word_counts_input_file=${DIR}/../data/word_counts.txt \
               --input_file=$csv_file \
               --maxlen=$maxlen \
