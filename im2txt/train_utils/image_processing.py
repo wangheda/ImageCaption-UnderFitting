@@ -25,6 +25,8 @@ from tensorflow import flags
 
 FLAGS = flags.FLAGS
 
+tf.flags.DEFINE_boolean("fuzzy_test", False,
+                        "Whether to distort images while testing.")
 
 def simple_process_image(encoded_image, thread_id=0, flip=False, is_training=True):
   """Decodes and processes an image string.
@@ -139,7 +141,7 @@ def process_image(encoded_image,
                                      method=tf.image.ResizeMethod.BILINEAR)
 
     # Crop to final dimensions.
-    if is_training:
+    if is_training or FLAGS.fuzzy_test:
       image = tf.random_crop(image, [height, width, 3])
     else:
       # Central crop, assuming resize_height > height, resize_width > width.
@@ -153,7 +155,7 @@ def process_image(encoded_image,
   image_summary("resized_image", image)
 
   # Randomly distort the image.
-  if is_training:
+  if is_training or FLAGS.fuzzy_test:
     image = distort_image(image, thread_id, flip)
 
   image_summary("final_image", image)
