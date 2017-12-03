@@ -62,7 +62,8 @@ class SemanticAttentionModel(object):
           name="map",
           shape=[FLAGS.vocab_size, FLAGS.embedding_size],
           initializer=initializer)
-      seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
+      if input_seqs is not None:
+        seq_embeddings = tf.nn.embedding_lookup(embedding_map, input_seqs)
 
     """Builds the model.
     Inputs:
