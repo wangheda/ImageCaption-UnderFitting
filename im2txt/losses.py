@@ -119,25 +119,20 @@ class SelfCriticalLoss(BaseLoss):
     reward = greedy_score - sample_score
     reward = tf.stop_gradient(reward)
 
-    if FLAGS.rl_beam_search_approximation:
-      # sample_caption_logits is already log probs
-      sample_caption_logprobs = sample_caption_logits
-      batch_size, max_sample_length = sample_caption_logprobs.get_shape().as_list()
-    else:
-      # extract the logprobs of each word in sample_captions
-      sample_probs = tf.nn.softmax(sample_caption_logits)
-      batch_size, max_sample_length, _ = sample_probs.get_shape().as_list()
-      sample_batch_index = tf.tile(tf.reshape(tf.range(0, batch_size), 
-                                              shape=[batch_size,1]), 
-                                   multiples=[1, max_sample_length])
-      sample_seq_index = tf.tile(tf.reshape(tf.range(0, max_sample_length), 
-                                            shape=[1, max_sample_length]), 
-                                 multiples=[batch_size, 1])
-      sample_gather_index = tf.stack([sample_batch_index, 
-                                      sample_seq_index, 
-                                      sample_caption_words], axis=2)
+    # extract the logprobs of each word in sample_captions
+    sample_probs = tf.nn.softmax(sample_caption_logits)
+    batch_size, max_sample_length, _ = sample_probs.get_shape().as_list()
+    sample_batch_index = tf.tile(tf.reshape(tf.range(0, batch_size), 
+                                            shape=[batch_size,1]), 
+                                 multiples=[1, max_sample_length])
+    sample_seq_index = tf.tile(tf.reshape(tf.range(0, max_sample_length), 
+                                          shape=[1, max_sample_length]), 
+                               multiples=[batch_size, 1])
+    sample_gather_index = tf.stack([sample_batch_index, 
+                                    sample_seq_index, 
+                                    sample_caption_words], axis=2)
 
-      sample_caption_logprobs = tf.log(tf.gather_nd(sample_probs, sample_gather_index))
+    sample_caption_logprobs = tf.log(tf.gather_nd(sample_probs, sample_gather_index))
 
     sample_caption_mask = tf.sequence_mask(sample_caption_lengths, 
                                            maxlen=max_sample_length)
