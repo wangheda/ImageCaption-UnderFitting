@@ -1,6 +1,16 @@
 Team code repository for image caption task
 -------
 
+# Download the dataset
+
+Download the dataset via:
+
+https://challenger.ai/competition/caption/subject
+
+Alternative link:
+
+https://drive.google.com/open?id=0ByB0MjjNghlyNkdhR3lIZGJneGM
+
 # Setting up the data path
   
 Use link to point to the data directory
