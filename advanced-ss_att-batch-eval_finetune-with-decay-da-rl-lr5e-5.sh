@@ -3,10 +3,11 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 #model_name="show_and_tell_advanced_model_attention_finetune_with_decay_da_rl"
-model_name="show_and_tell_advanced_model_visual_attention_rl_adam_lr5e-5_decay308"
+#model_name="show_and_tell_advanced_model_visual_attention_rl_adam_lr5e-5_decay308"
+model_name="show_and_tell_advanced_model_visual_attention_rl_adam_lr5e-5_decay308_bsa"
 num_processes=1
 gpu_fraction=1
-device=0
+device=1
 model=ShowAndTellAdvancedModel
 
 MODEL_DIR="${DIR}/model/${model_name}"

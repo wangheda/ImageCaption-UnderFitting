@@ -312,7 +312,7 @@ class ShowAndTellAdvancedModel(object):
               impute_finished=False,
               maximum_iterations=FLAGS.max_caption_length)
 
-            bs_sample_caption = bs_outputs["bs_results"].predicted_ids # (batch_size, seq_len, beam_width)
+            bs_sample_caption = bs_outputs.predicted_ids # (batch_size, seq_len, beam_width)
             bs_sample_caption = tf.transpose(bs_sample_caption, perm=[0,2,1])
             bs_sample_caption = tf.reshape(bs_sample_caption, shape=[batch_size * FLAGS.beam_width, -1])
 
@@ -325,10 +325,10 @@ class ShowAndTellAdvancedModel(object):
 
             bs_sample_caption_lengths = tf.reshape(bs_outputs_sequence_lengths, shape=[batch_size * FLAGS.beam_width])
 
-            # then us id to generate probs
+            # then use id to generate probs
             helper = tf.contrib.seq2seq.TrainingHelper(
               inputs=bs_sample_caption_embeddings,
-              sequence_length=bs_outputs_sequence_lengths)
+              sequence_length=bs_sample_caption_lengths)
 
             decoder = tf.contrib.seq2seq.BasicDecoder(
               cell=lstm_cell,

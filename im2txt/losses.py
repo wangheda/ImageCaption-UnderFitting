@@ -132,8 +132,8 @@ class SelfCriticalLoss(BaseLoss):
                                     sample_seq_index, 
                                     sample_caption_words], axis=2)
 
-    sample_caption_logprobs = tf.log(tf.gather_nd(sample_probs, sample_gather_index))
-
+    sample_caption_logprobs = tf.log(tf.gather_nd(sample_probs, sample_gather_index) + epsilon)
+    tf.summary.histogram("losses/sample_caption_logprobs", sample_caption_logprobs)
     sample_caption_mask = tf.sequence_mask(sample_caption_lengths, 
                                            maxlen=max_sample_length)
     sample_caption_mask = tf.cast(sample_caption_mask, dtype=tf.float32)
